@@ -1,0 +1,39 @@
+{
+  "name": "@expt/sdk",
+  "version": "0.1.0",
+  "description": "TypeScript SDK for the Expt on-chain program",
+  "main": "dist/index.js",
+  "module": "dist/index.mjs",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.mjs",
+      "require": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "src"
+  ],
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "lint": "tsc --noEmit",
+    "test": "bun test"
+  },
+  "dependencies": {
+    "@coral-xyz/anchor": "^0.31.1",
+    "@solana/web3.js": "^1.98.0",
+    "bn.js": "^5.2.1"
+  },
+  "devDependencies": {
+    "@types/bn.js": "^5.1.6",
+    "tsup": "^8.4.0",
+    "typescript": "^5.8.0"
+  },
+  "peerDependencies": {
+    "@coral-xyz/anchor": ">=0.30.0",
+    "@solana/web3.js": ">=1.90.0"
+  }
+}

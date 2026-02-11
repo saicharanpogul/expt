@@ -1,7 +1,7 @@
 [package]
 name = "expt"
 version = "0.1.0"
-description = "Created with Anchor"
+description = "Expt - Earn capital by shipping"
 edition = "2021"
 
 [lib]
@@ -14,9 +14,11 @@ cpi = ["no-entrypoint"]
 no-entrypoint = []
 no-idl = []
 no-log-ix-name = []
-idl-build = ["anchor-lang/idl-build"]
-
+idl-build = ["anchor-lang/idl-build", "anchor-spl/idl-build"]
 
 [dependencies]
-anchor-lang = "0.31.1"
-
+anchor-lang = { version = "0.31.1", features = ["init-if-needed"] }
+anchor-spl = "0.31.1"
+bytemuck = { version = "1.23.1", features = ["derive", "min_const_generics"] }
+num_enum = "0.7.4"
+static_assertions = "1.1.0"

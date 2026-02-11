@@ -1,0 +1,1354 @@
+{
+  "address": "9EY3BccFR7QprDNFbZ2fqy5t6wzgpiAYg24mcjYu5nYw",
+  "metadata": {
+    "name": "expt",
+    "version": "0.1.0",
+    "spec": "0.1.0",
+    "description": "Expt - Earn capital by shipping"
+  },
+  "instructions": [
+    {
+      "name": "claim_builder_funds",
+      "docs": [
+        "Builder claims earned funds from the treasury based on passed milestones."
+      ],
+      "discriminator": [
+        142,
+        161,
+        65,
+        35,
+        46,
+        7,
+        194,
+        97
+      ],
+      "accounts": [
+        {
+          "name": "builder",
+          "docs": [
+            "Builder claiming funds"
+          ],
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "expt_config",
+          "docs": [
+            "ExptConfig PDA"
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  101,
+                  120,
+                  112,
+                  116,
+                  95,
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "builder"
+              }
+            ]
+          }
+        },
+        {
+          "name": "treasury",
+          "docs": [
+            "Treasury PDA holding the funds"
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  116,
+                  114,
+                  101,
+                  97,
+                  115,
+                  117,
+                  114,
+                  121
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "expt_config"
+              }
+            ]
+          }
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "create_expt_config",
+      "docs": [
+        "Create a new experiment with presale parameters and milestones.",
+        "One active experiment per builder wallet."
+      ],
+      "discriminator": [
+        8,
+        112,
+        78,
+        138,
+        108,
+        49,
+        196,
+        55
+      ],
+      "accounts": [
+        {
+          "name": "builder",
+          "docs": [
+            "Builder creating the experiment"
+          ],
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "expt_config",
+          "docs": [
+            "ExptConfig PDA — one active experiment per builder"
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  101,
+                  120,
+                  112,
+                  116,
+                  95,
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "builder"
+              }
+            ]
+          }
+        },
+        {
+          "name": "treasury",
+          "docs": [
+            "Treasury PDA — holds SOL for the experiment"
+          ],
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  116,
+                  114,
+                  101,
+                  97,
+                  115,
+                  117,
+                  114,
+                  121
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "expt_config"
+              }
+            ]
+          }
+        },
+        {
+          "name": "presale",
+          "docs": [
+            "Meteora presale vault account"
+          ]
+        },
+        {
+          "name": "mint",
+          "docs": [
+            "Expt Coin mint (created externally or passed in)"
+          ]
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "args",
+          "type": {
+            "defined": {
+              "name": "CreateExptConfigArgs"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "finalize_presale",
+      "docs": [
+        "Finalize the presale by reading Meteora presale vault state.",
+        "Permissionless — anyone can call after presale ends."
+      ],
+      "discriminator": [
+        100,
+        245,
+        60,
+        81,
+        177,
+        232,
+        255,
+        99
+      ],
+      "accounts": [
+        {
+          "name": "payer",
+          "docs": [
+            "Anyone can finalize after presale ends"
+          ],
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "expt_config",
+          "docs": [
+            "ExptConfig PDA"
+          ],
+          "writable": true
+        },
+        {
+          "name": "presale",
+          "docs": [
+            "The Meteora presale vault referenced in ExptConfig"
+          ]
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "initiate_veto",
+      "docs": [
+        "Holder stakes SOL against a submitted milestone to veto it."
+      ],
+      "discriminator": [
+        77,
+        201,
+        154,
+        77,
+        179,
+        78,
+        26,
+        133
+      ],
+      "accounts": [
+        {
+          "name": "staker",
+          "docs": [
+            "The holder staking against a milestone"
+          ],
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "expt_config",
+          "docs": [
+            "ExptConfig PDA"
+          ],
+          "writable": true
+        },
+        {
+          "name": "veto_stake",
+          "docs": [
+            "VetoStake PDA — per staker per milestone"
+          ],
+          "writable": true
+        },
+        {
+          "name": "treasury",
+          "docs": [
+            "Treasury PDA that holds veto stake funds"
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  116,
+                  114,
+                  101,
+                  97,
+                  115,
+                  117,
+                  114,
+                  121
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "expt_config"
+              }
+            ]
+          }
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "args",
+          "type": {
+            "defined": {
+              "name": "InitiateVetoArgs"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "resolve_milestone",
+      "docs": [
+        "Resolve a milestone after the challenge window expires.",
+        "Permissionless — anyone can call."
+      ],
+      "discriminator": [
+        183,
+        234,
+        132,
+        97,
+        208,
+        35,
+        45,
+        117
+      ],
+      "accounts": [
+        {
+          "name": "payer",
+          "docs": [
+            "Anyone can call resolution after the challenge window"
+          ],
+          "signer": true
+        },
+        {
+          "name": "expt_config",
+          "docs": [
+            "ExptConfig PDA"
+          ],
+          "writable": true
+        }
+      ],
+      "args": [
+        {
+          "name": "args",
+          "type": {
+            "defined": {
+              "name": "ResolveMilestoneArgs"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "submit_milestone",
+      "docs": [
+        "Builder submits proof for a milestone, opening the challenge window."
+      ],
+      "discriminator": [
+        35,
+        96,
+        220,
+        215,
+        102,
+        83,
+        139,
+        52
+      ],
+      "accounts": [
+        {
+          "name": "builder",
+          "docs": [
+            "Builder submitting proof"
+          ],
+          "signer": true
+        },
+        {
+          "name": "expt_config",
+          "docs": [
+            "ExptConfig PDA"
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  101,
+                  120,
+                  112,
+                  116,
+                  95,
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "builder"
+              }
+            ]
+          }
+        }
+      ],
+      "args": [
+        {
+          "name": "args",
+          "type": {
+            "defined": {
+              "name": "SubmitMilestoneArgs"
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "accounts": [
+    {
+      "name": "ExptConfig",
+      "discriminator": [
+        220,
+        212,
+        242,
+        120,
+        130,
+        152,
+        73,
+        178
+      ]
+    },
+    {
+      "name": "VetoStake",
+      "discriminator": [
+        152,
+        92,
+        139,
+        65,
+        167,
+        238,
+        10,
+        246
+      ]
+    }
+  ],
+  "events": [
+    {
+      "name": "EvtBuilderFundsClaimed",
+      "discriminator": [
+        141,
+        167,
+        207,
+        204,
+        83,
+        70,
+        110,
+        230
+      ]
+    },
+    {
+      "name": "EvtExptConfigCreated",
+      "discriminator": [
+        21,
+        53,
+        66,
+        158,
+        167,
+        27,
+        236,
+        222
+      ]
+    },
+    {
+      "name": "EvtMilestoneResolved",
+      "discriminator": [
+        164,
+        180,
+        123,
+        20,
+        92,
+        103,
+        5,
+        160
+      ]
+    },
+    {
+      "name": "EvtMilestoneSubmitted",
+      "discriminator": [
+        76,
+        134,
+        29,
+        157,
+        27,
+        186,
+        28,
+        27
+      ]
+    },
+    {
+      "name": "EvtPresaleFinalized",
+      "discriminator": [
+        231,
+        57,
+        117,
+        31,
+        8,
+        102,
+        147,
+        120
+      ]
+    },
+    {
+      "name": "EvtVetoInitiated",
+      "discriminator": [
+        104,
+        161,
+        57,
+        99,
+        227,
+        126,
+        154,
+        213
+      ]
+    }
+  ],
+  "errors": [
+    {
+      "code": 6000,
+      "name": "InvalidName",
+      "msg": "Invalid experiment name"
+    },
+    {
+      "code": 6001,
+      "name": "InvalidUri",
+      "msg": "Invalid metadata URI"
+    },
+    {
+      "code": 6002,
+      "name": "InvalidPresaleParams",
+      "msg": "Invalid presale parameters"
+    },
+    {
+      "code": 6003,
+      "name": "InvalidMilestoneConfig",
+      "msg": "Invalid milestone configuration"
+    },
+    {
+      "code": 6004,
+      "name": "MilestoneUnlockBpsOverflow",
+      "msg": "Milestone unlock BPS exceed 100%"
+    },
+    {
+      "code": 6005,
+      "name": "InvalidMilestoneCount",
+      "msg": "Invalid milestone count"
+    },
+    {
+      "code": 6006,
+      "name": "InvalidMilestoneDeadline",
+      "msg": "Invalid milestone deadline"
+    },
+    {
+      "code": 6007,
+      "name": "RaiseAmountExceedsMax",
+      "msg": "Raise amount exceeds maximum"
+    },
+    {
+      "code": 6008,
+      "name": "ZeroMinimumCap",
+      "msg": "Presale minimum cap must be greater than zero"
+    },
+    {
+      "code": 6009,
+      "name": "InvalidStatus",
+      "msg": "Invalid experiment status for this operation"
+    },
+    {
+      "code": 6010,
+      "name": "Unauthorized",
+      "msg": "Unauthorized: only the builder can perform this action"
+    },
+    {
+      "code": 6011,
+      "name": "PresaleNotEnded",
+      "msg": "Presale has not ended yet"
+    },
+    {
+      "code": 6012,
+      "name": "PresaleFailed",
+      "msg": "Presale failed: minimum cap not reached"
+    },
+    {
+      "code": 6013,
+      "name": "MilestoneNotPending",
+      "msg": "Milestone is not in pending status"
+    },
+    {
+      "code": 6014,
+      "name": "MilestoneNotSubmitted",
+      "msg": "Milestone is not in submitted status"
+    },
+    {
+      "code": 6015,
+      "name": "MilestoneDeadlinePassed",
+      "msg": "Milestone deadline has passed"
+    },
+    {
+      "code": 6016,
+      "name": "ChallengeWindowNotEnded",
+      "msg": "Challenge window has not ended"
+    },
+    {
+      "code": 6017,
+      "name": "ChallengeWindowEnded",
+      "msg": "Challenge window has ended"
+    },
+    {
+      "code": 6018,
+      "name": "NoFundsAvailable",
+      "msg": "No funds available to claim"
+    },
+    {
+      "code": 6019,
+      "name": "MathOverflow",
+      "msg": "Math overflow"
+    },
+    {
+      "code": 6020,
+      "name": "InvalidMilestoneIndex",
+      "msg": "Invalid milestone index"
+    },
+    {
+      "code": 6021,
+      "name": "InvalidVetoStakeAmount",
+      "msg": "Invalid veto stake amount"
+    },
+    {
+      "code": 6022,
+      "name": "InvalidPresaleAccount",
+      "msg": "Invalid presale account"
+    },
+    {
+      "code": 6023,
+      "name": "MilestoneAlreadyResolved",
+      "msg": "Milestone already resolved"
+    }
+  ],
+  "types": [
+    {
+      "name": "CreateExptConfigArgs",
+      "docs": [
+        "Arguments for creating an experiment"
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "name",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "uri",
+            "type": {
+              "array": [
+                "u8",
+                200
+              ]
+            }
+          },
+          {
+            "name": "presale_minimum_cap",
+            "type": "u64"
+          },
+          {
+            "name": "veto_threshold_bps",
+            "type": "u16"
+          },
+          {
+            "name": "challenge_window",
+            "type": "u64"
+          },
+          {
+            "name": "milestones",
+            "type": {
+              "vec": {
+                "defined": {
+                  "name": "MilestoneArg"
+                }
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "EvtBuilderFundsClaimed",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "expt_config",
+            "type": "pubkey"
+          },
+          {
+            "name": "builder",
+            "type": "pubkey"
+          },
+          {
+            "name": "amount",
+            "type": "u64"
+          },
+          {
+            "name": "total_claimed",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "EvtExptConfigCreated",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "expt_config",
+            "type": "pubkey"
+          },
+          {
+            "name": "builder",
+            "type": "pubkey"
+          },
+          {
+            "name": "presale",
+            "type": "pubkey"
+          },
+          {
+            "name": "mint",
+            "type": "pubkey"
+          },
+          {
+            "name": "name",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "milestone_count",
+            "type": "u8"
+          },
+          {
+            "name": "presale_minimum_cap",
+            "type": "u64"
+          },
+          {
+            "name": "veto_threshold_bps",
+            "type": "u16"
+          },
+          {
+            "name": "challenge_window",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "EvtMilestoneResolved",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "expt_config",
+            "type": "pubkey"
+          },
+          {
+            "name": "milestone_index",
+            "type": "u8"
+          },
+          {
+            "name": "passed",
+            "type": "bool"
+          },
+          {
+            "name": "total_veto_stake",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "EvtMilestoneSubmitted",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "expt_config",
+            "type": "pubkey"
+          },
+          {
+            "name": "milestone_index",
+            "type": "u8"
+          },
+          {
+            "name": "submitted_at",
+            "type": "u64"
+          },
+          {
+            "name": "challenge_window_end",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "EvtPresaleFinalized",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "expt_config",
+            "type": "pubkey"
+          },
+          {
+            "name": "new_status",
+            "type": "u8"
+          },
+          {
+            "name": "total_deposit",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "EvtVetoInitiated",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "expt_config",
+            "type": "pubkey"
+          },
+          {
+            "name": "milestone_index",
+            "type": "u8"
+          },
+          {
+            "name": "staker",
+            "type": "pubkey"
+          },
+          {
+            "name": "stake_amount",
+            "type": "u64"
+          },
+          {
+            "name": "total_veto_stake",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "ExptConfig",
+      "docs": [
+        "Main experiment configuration account.",
+        "PDA seeds: [b\"expt_config\", builder.key()]"
+      ],
+      "serialization": "bytemuck",
+      "repr": {
+        "kind": "c"
+      },
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "builder",
+            "docs": [
+              "Builder wallet (owner of this experiment)"
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "name",
+            "docs": [
+              "Experiment name (UTF-8, null-padded)"
+            ],
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "uri",
+            "docs": [
+              "Metadata URI"
+            ],
+            "type": {
+              "array": [
+                "u8",
+                200
+              ]
+            }
+          },
+          {
+            "name": "presale",
+            "docs": [
+              "Meteora presale vault pubkey"
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "mint",
+            "docs": [
+              "Expt Coin mint"
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "treasury_bump",
+            "docs": [
+              "Treasury PDA bump seed"
+            ],
+            "type": "u8"
+          },
+          {
+            "name": "status",
+            "docs": [
+              "Current experiment status (ExptStatus as u8)"
+            ],
+            "type": "u8"
+          },
+          {
+            "name": "milestone_count",
+            "docs": [
+              "Number of milestones (1-3)"
+            ],
+            "type": "u8"
+          },
+          {
+            "name": "_padding0",
+            "docs": [
+              "Padding for alignment"
+            ],
+            "type": {
+              "array": [
+                "u8",
+                5
+              ]
+            }
+          },
+          {
+            "name": "presale_minimum_cap",
+            "docs": [
+              "Minimum SOL for presale success"
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "total_treasury_received",
+            "docs": [
+              "Total SOL received into treasury"
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "total_claimed_by_builder",
+            "docs": [
+              "Total SOL claimed by builder so far"
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "veto_threshold_bps",
+            "docs": [
+              "Veto threshold in basis points"
+            ],
+            "type": "u16"
+          },
+          {
+            "name": "_padding1",
+            "docs": [
+              "Padding for alignment"
+            ],
+            "type": {
+              "array": [
+                "u8",
+                6
+              ]
+            }
+          },
+          {
+            "name": "challenge_window",
+            "docs": [
+              "Challenge window duration in seconds"
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "milestones",
+            "docs": [
+              "Inline milestones"
+            ],
+            "type": {
+              "array": [
+                {
+                  "defined": {
+                    "name": "Milestone"
+                  }
+                },
+                3
+              ]
+            }
+          },
+          {
+            "name": "padding",
+            "docs": [
+              "Reserved for future use"
+            ],
+            "type": {
+              "array": [
+                "u8",
+                64
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "InitiateVetoArgs",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "milestone_index",
+            "type": "u8"
+          },
+          {
+            "name": "amount",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "Milestone",
+      "docs": [
+        "A single milestone definition and its runtime state.",
+        "Stored inline within ExptConfig (max 3)."
+      ],
+      "serialization": "bytemuck",
+      "repr": {
+        "kind": "c"
+      },
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "description",
+            "docs": [
+              "Human-readable description"
+            ],
+            "type": {
+              "array": [
+                "u8",
+                128
+              ]
+            }
+          },
+          {
+            "name": "deliverable_type",
+            "docs": [
+              "Type of expected deliverable (DeliverableType as u8)"
+            ],
+            "type": "u8"
+          },
+          {
+            "name": "_padding0",
+            "docs": [
+              "Padding for alignment"
+            ],
+            "type": {
+              "array": [
+                "u8",
+                1
+              ]
+            }
+          },
+          {
+            "name": "unlock_bps",
+            "docs": [
+              "Percentage of treasury unlocked on pass (basis points)"
+            ],
+            "type": "u16"
+          },
+          {
+            "name": "_padding1",
+            "docs": [
+              "Padding for alignment"
+            ],
+            "type": {
+              "array": [
+                "u8",
+                4
+              ]
+            }
+          },
+          {
+            "name": "deadline",
+            "docs": [
+              "Deadline timestamp (must deliver before this)"
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "status",
+            "docs": [
+              "Current status (MilestoneStatus as u8)"
+            ],
+            "type": "u8"
+          },
+          {
+            "name": "_padding2",
+            "docs": [
+              "Padding for alignment"
+            ],
+            "type": {
+              "array": [
+                "u8",
+                7
+              ]
+            }
+          },
+          {
+            "name": "submitted_at",
+            "docs": [
+              "Timestamp when proof was submitted"
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "deliverable",
+            "docs": [
+              "Proof reference (URL, program ID, etc.)"
+            ],
+            "type": {
+              "array": [
+                "u8",
+                200
+              ]
+            }
+          },
+          {
+            "name": "total_veto_stake",
+            "docs": [
+              "Total SOL staked in veto against this milestone"
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "challenge_window_end",
+            "docs": [
+              "When the challenge window closes"
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "padding",
+            "docs": [
+              "Reserved for future use"
+            ],
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "MilestoneArg",
+      "docs": [
+        "Arguments for creating a milestone"
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "description",
+            "type": {
+              "array": [
+                "u8",
+                128
+              ]
+            }
+          },
+          {
+            "name": "deliverable_type",
+            "type": "u8"
+          },
+          {
+            "name": "unlock_bps",
+            "type": "u16"
+          },
+          {
+            "name": "deadline",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "ResolveMilestoneArgs",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "milestone_index",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "SubmitMilestoneArgs",
+      "docs": [
+        "Arguments for submitting a milestone"
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "milestone_index",
+            "type": "u8"
+          },
+          {
+            "name": "deliverable",
+            "type": {
+              "array": [
+                "u8",
+                200
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "VetoStake",
+      "docs": [
+        "Per-user per-milestone veto stake account.",
+        "PDA seeds: [b\"veto_stake\", expt_config.key(), staker.key(), &[milestone_index]]"
+      ],
+      "serialization": "bytemuck",
+      "repr": {
+        "kind": "c"
+      },
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "expt_config",
+            "docs": [
+              "The ExptConfig this stake is for"
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "staker",
+            "docs": [
+              "The wallet that staked"
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "milestone_index",
+            "docs": [
+              "Which milestone index (0-2)"
+            ],
+            "type": "u8"
+          },
+          {
+            "name": "_padding0",
+            "docs": [
+              "Padding for alignment"
+            ],
+            "type": {
+              "array": [
+                "u8",
+                7
+              ]
+            }
+          },
+          {
+            "name": "amount",
+            "docs": [
+              "Amount of SOL staked (in lamports)"
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "padding",
+            "docs": [
+              "Reserved for future use"
+            ],
+            "type": {
+              "array": [
+                "u64",
+                4
+              ]
+            }
+          }
+        ]
+      }
+    }
+  ]
+}
