@@ -55,13 +55,10 @@ pub fn handle_finalize_presale(ctx: Context<FinalizePresaleCtx>) -> Result<()> {
 
     // 5. Determine outcome
     if presale_state.total_deposit >= presale_state.presale_minimum_cap {
-        // Presale succeeded
+        // Presale succeeded — move to Active status.
+        // Funds are NOT moved here. The withdraw_presale_funds instruction
+        // will CPI creator_withdraw and set total_treasury_received correctly.
         config.status = ExptStatus::Active.into();
-
-        // Record how much SOL the treasury should manage
-        // Per PRD: 25% of presale funds go to treasury (75% would go to LP — future)
-        // For now, we track the total deposit as the treasury amount
-        config.total_treasury_received = presale_state.total_deposit;
     } else {
         // Presale failed — minimum not met
         config.status = ExptStatus::PresaleFailed.into();

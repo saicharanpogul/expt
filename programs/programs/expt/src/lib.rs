@@ -59,4 +59,22 @@ pub mod expt {
     pub fn claim_builder_funds(ctx: Context<ClaimBuilderFundsCtx>) -> Result<()> {
         instructions::handle_claim_builder_funds(ctx)
     }
+
+    /// Launch a DAMM v2 pool after presale succeeds.
+    /// Permissionless — anyone can trigger after finalize_presale.
+    pub fn launch_pool(ctx: Context<LaunchPoolCtx>, args: LaunchPoolArgs) -> Result<()> {
+        instructions::handle_launch_pool(ctx, args)
+    }
+
+    /// Claim accrued trading fees from the DAMM v2 pool.
+    /// Permissionless — requires pool launched + ≥1 milestone passed.
+    pub fn claim_trading_fees(ctx: Context<ClaimTradingFeesCtx>) -> Result<()> {
+        instructions::handle_claim_trading_fees(ctx)
+    }
+
+    /// Withdraw raised presale funds into the treasury PDA.
+    /// Permissionless — requires presale finalized + status Active.
+    pub fn withdraw_presale_funds(ctx: Context<WithdrawPresaleFundsCtx>) -> Result<()> {
+        instructions::handle_withdraw_presale_funds(ctx)
+    }
 }

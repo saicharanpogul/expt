@@ -6,7 +6,12 @@ import {
 } from "@solana/web3.js";
 
 import { IDL, type Expt } from "./idl";
-import { EXPT_PROGRAM_ID } from "./constants";
+import {
+  EXPT_PROGRAM_ID,
+  PRESALE_PROGRAM_ID,
+  PRESALE_AUTHORITY,
+  MEMO_PROGRAM_ID,
+} from "./constants";
 import {
   deriveExptConfigPda,
   deriveTreasuryPda,
@@ -237,6 +242,154 @@ export class ExptClient {
         exptConfig: exptConfigPda,
         treasury: treasuryPda,
         systemProgram: SystemProgram.programId,
+      })
+      .instruction();
+  }
+
+  // -----------------------------------------------------------------------
+  // Presale CPI instructions
+  // -----------------------------------------------------------------------
+
+  /**
+   * Withdraw presale funds into the treasury PDA.
+   * Permissionless — CPI into Meteora's creator_withdraw.
+   */
+  async withdrawPresaleFunds(
+    payer: PublicKey,
+    exptConfig: PublicKey,
+    presale: PublicKey,
+    treasuryQuoteToken: PublicKey,
+    quoteTokenVault: PublicKey,
+    quoteMint: PublicKey,
+    tokenProgram: PublicKey
+  ): Promise<TransactionInstruction> {
+    const config = await (this.program.account as any).exptConfig.fetch(
+      exptConfig
+    );
+    const [treasuryPda] = this.deriveTreasuryPda(exptConfig);
+
+    return await (this.program.methods as any)
+      .withdrawPresaleFunds()
+      .accounts({
+        payer,
+        exptConfig,
+        treasury: treasuryPda,
+        presale,
+        presaleAuthority: PRESALE_AUTHORITY,
+        treasuryQuoteToken,
+        quoteTokenVault,
+        quoteMint,
+        tokenProgram,
+        memoProgram: MEMO_PROGRAM_ID,
+        presaleProgram: PRESALE_PROGRAM_ID,
+      })
+      .instruction();
+  }
+
+  // -----------------------------------------------------------------------
+  // DAMM v2 instructions
+  // -----------------------------------------------------------------------
+
+  /**
+   * Launch a DAMM v2 pool after presale succeeds.
+   * Permissionless — anyone can trigger after finalize_presale.
+   *
+   * Note: This requires many DAMM v2 accounts. The caller must derive/provide
+   * pool, position, vault, and config accounts from the DAMM v2 program.
+   */
+  async launchPool(
+    payer: PublicKey,
+    exptConfig: PublicKey,
+    args: {
+      tokenAAmount: BN;
+      tokenBAmount: BN;
+      activationPoint: BN;
+      feeSchedulerMode: number;
+      baseFeeNumerator: BN;
+      feeSchedulerParam0: BN;
+      feeSchedulerParam1: BN;
+      feeSchedulerParam2: BN;
+      hasAlphaVault: boolean;
+      dynamicFee: {
+        initialized: number;
+        baseFeeRateCliff: BN;
+        baseFeeRatePhaseTwo: BN;
+        numberOfPeriod: number;
+        periodFrequency: BN;
+        reductionFactor: BN;
+        feeSchedulerMode: number;
+        padding0: number[];
+        padding1: BN[];
+      };
+    },
+    remainingAccounts: {
+      pool: PublicKey;
+      tokenAMint: PublicKey;
+      tokenBMint: PublicKey;
+      poolTokenAVault: PublicKey;
+      poolTokenBVault: PublicKey;
+      payerTokenA: PublicKey;
+      payerTokenB: PublicKey;
+      positionNftMint: PublicKey;
+      position: PublicKey;
+      poolAuthority: PublicKey;
+      ammConfig: PublicKey;
+      mintMetadata: PublicKey;
+      tokenAProgram: PublicKey;
+      tokenBProgram: PublicKey;
+      associatedTokenProgram: PublicKey;
+      tokenProgram: PublicKey;
+      metadataProgram: PublicKey;
+      rent: PublicKey;
+      dammProgram: PublicKey;
+    }
+  ): Promise<TransactionInstruction> {
+    const [treasuryPda] = this.deriveTreasuryPda(exptConfig);
+
+    return await (this.program.methods as any)
+      .launchPool(args)
+      .accounts({
+        payer,
+        exptConfig,
+        treasury: treasuryPda,
+        ...remainingAccounts,
+        systemProgram: SystemProgram.programId,
+      })
+      .instruction();
+  }
+
+  /**
+   * Claim accrued trading fees from the DAMM v2 pool.
+   * Permissionless — requires pool launched + ≥1 milestone passed.
+   */
+  async claimTradingFees(
+    payer: PublicKey,
+    exptConfig: PublicKey,
+    dammAccounts: {
+      pool: PublicKey;
+      position: PublicKey;
+      positionNftAccount: PublicKey;
+      poolTokenAVault: PublicKey;
+      poolTokenBVault: PublicKey;
+      treasuryTokenA: PublicKey;
+      treasuryTokenB: PublicKey;
+      tokenAMint: PublicKey;
+      tokenBMint: PublicKey;
+      poolAuthority: PublicKey;
+      tokenAProgram: PublicKey;
+      tokenBProgram: PublicKey;
+      dammProgram: PublicKey;
+    }
+  ): Promise<TransactionInstruction> {
+    const [treasuryPda] = this.deriveTreasuryPda(exptConfig);
+
+    return await (this.program.methods as any)
+      .claimTradingFees()
+      .accounts({
+        payer,
+        exptConfig,
+        treasury: treasuryPda,
+        ...dammAccounts,
       })
       .instruction();
   }

@@ -52,3 +52,30 @@ pub struct EvtBuilderFundsClaimed {
     pub amount: u64,
     pub total_claimed: u64,
 }
+
+#[event]
+pub struct EvtPoolLaunched {
+    pub expt_config: Pubkey,
+    pub damm_pool: Pubkey,
+    pub position_nft_mint: Pubkey,
+    pub lp_position: Pubkey,
+    pub token_a_amount: u64,
+    pub token_b_amount: u64,
+}
+
+#[event]
+pub struct EvtTradingFeesClaimed {
+    pub expt_config: Pubkey,
+    pub damm_pool: Pubkey,
+    pub fee_a_claimed: u64,
+    pub fee_b_claimed: u64,
+}
+
+#[event]
+pub struct EvtPresaleFundsWithdrawn {
+    pub expt_config: Pubkey,
+    pub presale: Pubkey,
+    pub total_withdrawn: u64,
+    pub treasury_amount: u64,
+    pub lp_amount: u64,
+}

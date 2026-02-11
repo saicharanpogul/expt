@@ -98,6 +98,140 @@
       "args": []
     },
     {
+      "name": "claim_trading_fees",
+      "docs": [
+        "Claim accrued trading fees from the DAMM v2 pool.",
+        "Permissionless — requires pool launched + ≥1 milestone passed."
+      ],
+      "discriminator": [
+        43,
+        0,
+        235,
+        28,
+        14,
+        111,
+        64,
+        29
+      ],
+      "accounts": [
+        {
+          "name": "payer",
+          "docs": [
+            "Anyone can trigger fee collection"
+          ],
+          "signer": true
+        },
+        {
+          "name": "expt_config",
+          "docs": [
+            "Expt config (for reading pool info)"
+          ]
+        },
+        {
+          "name": "treasury",
+          "docs": [
+            "Treasury PDA — owns the position NFT and receives fees"
+          ],
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  116,
+                  114,
+                  101,
+                  97,
+                  115,
+                  117,
+                  114,
+                  121
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "expt_config"
+              }
+            ]
+          }
+        },
+        {
+          "name": "damm_pool_authority"
+        },
+        {
+          "name": "damm_pool"
+        },
+        {
+          "name": "damm_position",
+          "writable": true
+        },
+        {
+          "name": "treasury_token_a",
+          "docs": [
+            "Treasury's token A account (receives fee in token A)"
+          ],
+          "writable": true
+        },
+        {
+          "name": "treasury_token_b",
+          "docs": [
+            "Treasury's token B account (receives fee in token B / SOL)"
+          ],
+          "writable": true
+        },
+        {
+          "name": "token_a_vault",
+          "docs": [
+            "Token A vault (DAMM pool vault)"
+          ],
+          "writable": true
+        },
+        {
+          "name": "token_b_vault",
+          "docs": [
+            "Token B vault (DAMM pool vault)"
+          ],
+          "writable": true
+        },
+        {
+          "name": "token_a_mint",
+          "docs": [
+            "Token A mint"
+          ]
+        },
+        {
+          "name": "token_b_mint",
+          "docs": [
+            "Token B mint"
+          ]
+        },
+        {
+          "name": "position_nft_account",
+          "docs": [
+            "Position NFT account (proves treasury owns the LP position)"
+          ]
+        },
+        {
+          "name": "token_a_program",
+          "docs": [
+            "Token A program"
+          ]
+        },
+        {
+          "name": "token_b_program",
+          "docs": [
+            "Token B program"
+          ]
+        },
+        {
+          "name": "damm_v2_program"
+        },
+        {
+          "name": "event_authority"
+        }
+      ],
+      "args": []
+    },
+    {
       "name": "create_expt_config",
       "docs": [
         "Create a new experiment with presale parameters and milestones.",
@@ -183,7 +317,8 @@
         {
           "name": "presale",
           "docs": [
-            "Meteora presale vault account"
+            "Meteora presale vault account",
+            "and presale.owner must equal the Treasury PDA"
           ]
         },
         {
@@ -332,6 +467,167 @@
       ]
     },
     {
+      "name": "launch_pool",
+      "docs": [
+        "Launch a DAMM v2 pool after presale succeeds.",
+        "Permissionless — anyone can trigger after finalize_presale."
+      ],
+      "discriminator": [
+        166,
+        119,
+        209,
+        182,
+        214,
+        109,
+        58,
+        181
+      ],
+      "accounts": [
+        {
+          "name": "payer",
+          "docs": [
+            "Anyone can trigger pool launch"
+          ],
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "expt_config",
+          "docs": [
+            "Expt config"
+          ],
+          "writable": true
+        },
+        {
+          "name": "treasury",
+          "docs": [
+            "Treasury PDA — holds SOL, will transfer 75% to LP"
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  116,
+                  114,
+                  101,
+                  97,
+                  115,
+                  117,
+                  114,
+                  121
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "expt_config"
+              }
+            ]
+          }
+        },
+        {
+          "name": "position_nft_mint",
+          "docs": [
+            "The position NFT mint (new keypair, signer)"
+          ],
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "damm_pool_authority"
+        },
+        {
+          "name": "damm_pool",
+          "writable": true
+        },
+        {
+          "name": "damm_position",
+          "writable": true
+        },
+        {
+          "name": "position_nft_account",
+          "writable": true
+        },
+        {
+          "name": "token_a_mint",
+          "docs": [
+            "Token A mint (the Expt Coin)"
+          ]
+        },
+        {
+          "name": "token_b_mint",
+          "docs": [
+            "Token B mint (SOL / WSOL)"
+          ]
+        },
+        {
+          "name": "token_a_vault",
+          "writable": true
+        },
+        {
+          "name": "token_b_vault",
+          "writable": true
+        },
+        {
+          "name": "payer_token_a",
+          "docs": [
+            "Payer's token A account (holds the Expt Coin supply)"
+          ],
+          "writable": true
+        },
+        {
+          "name": "payer_token_b",
+          "docs": [
+            "Payer's token B account (WSOL)"
+          ],
+          "writable": true
+        },
+        {
+          "name": "token_a_program",
+          "docs": [
+            "Token A program (SPL Token or Token-2022)"
+          ]
+        },
+        {
+          "name": "token_b_program",
+          "docs": [
+            "Token B program (SPL Token)"
+          ]
+        },
+        {
+          "name": "token_2022_program",
+          "docs": [
+            "Token-2022 program (for NFT mint)"
+          ],
+          "address": "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb"
+        },
+        {
+          "name": "system_program",
+          "docs": [
+            "System program"
+          ],
+          "address": "11111111111111111111111111111111"
+        },
+        {
+          "name": "damm_v2_program"
+        },
+        {
+          "name": "event_authority"
+        }
+      ],
+      "args": [
+        {
+          "name": "args",
+          "type": {
+            "defined": {
+              "name": "LaunchPoolArgs"
+            }
+          }
+        }
+      ]
+    },
+    {
       "name": "resolve_milestone",
       "docs": [
         "Resolve a milestone after the challenge window expires.",
@@ -439,6 +735,112 @@
           }
         }
       ]
+    },
+    {
+      "name": "withdraw_presale_funds",
+      "docs": [
+        "Withdraw raised presale funds into the treasury PDA.",
+        "Permissionless — requires presale finalized + status Active."
+      ],
+      "discriminator": [
+        1,
+        208,
+        156,
+        215,
+        120,
+        208,
+        232,
+        161
+      ],
+      "accounts": [
+        {
+          "name": "payer",
+          "docs": [
+            "Anyone can trigger withdrawal"
+          ],
+          "signer": true
+        },
+        {
+          "name": "expt_config",
+          "docs": [
+            "ExptConfig PDA (writable to update state)"
+          ],
+          "writable": true
+        },
+        {
+          "name": "treasury",
+          "docs": [
+            "Treasury PDA — presale owner, receives the withdrawn funds"
+          ],
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  116,
+                  114,
+                  101,
+                  97,
+                  115,
+                  117,
+                  114,
+                  121
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "expt_config"
+              }
+            ]
+          }
+        },
+        {
+          "name": "presale",
+          "docs": [
+            "Presale vault account (writable — state updated by Meteora)"
+          ],
+          "writable": true
+        },
+        {
+          "name": "presale_authority",
+          "address": "AUh8bm2XsMfex3KjYGcM3G4uBqUNSDw6HEhWaWMYnyPH"
+        },
+        {
+          "name": "treasury_quote_token",
+          "docs": [
+            "Treasury's quote token account (receives withdrawn SOL/WSOL)"
+          ],
+          "writable": true
+        },
+        {
+          "name": "quote_token_vault",
+          "docs": [
+            "Quote token vault in the presale (source of funds)"
+          ],
+          "writable": true
+        },
+        {
+          "name": "quote_mint",
+          "docs": [
+            "Quote token mint"
+          ]
+        },
+        {
+          "name": "token_program",
+          "docs": [
+            "Token program for quote token transfers"
+          ]
+        },
+        {
+          "name": "memo_program",
+          "address": "MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr"
+        },
+        {
+          "name": "presale_program",
+          "address": "presSVxnf9UU8jMxhgSMqaRwNiT36qeBdNeTRKjTdbj"
+        }
+      ],
+      "args": []
     }
   ],
   "accounts": [
@@ -523,6 +925,19 @@
       ]
     },
     {
+      "name": "EvtPoolLaunched",
+      "discriminator": [
+        81,
+        126,
+        42,
+        204,
+        167,
+        131,
+        208,
+        146
+      ]
+    },
+    {
       "name": "EvtPresaleFinalized",
       "discriminator": [
         231,
@@ -533,6 +948,32 @@
         102,
         147,
         120
+      ]
+    },
+    {
+      "name": "EvtPresaleFundsWithdrawn",
+      "discriminator": [
+        22,
+        81,
+        185,
+        188,
+        25,
+        42,
+        20,
+        174
+      ]
+    },
+    {
+      "name": "EvtTradingFeesClaimed",
+      "discriminator": [
+        206,
+        139,
+        161,
+        17,
+        209,
+        116,
+        158,
+        38
       ]
     },
     {
@@ -669,6 +1110,31 @@
       "code": 6023,
       "name": "MilestoneAlreadyResolved",
       "msg": "Milestone already resolved"
+    },
+    {
+      "code": 6024,
+      "name": "PoolAlreadyLaunched",
+      "msg": "Pool has already been launched"
+    },
+    {
+      "code": 6025,
+      "name": "PoolNotLaunched",
+      "msg": "Pool has not been launched yet"
+    },
+    {
+      "code": 6026,
+      "name": "NoMilestonesPassed",
+      "msg": "No milestones have passed yet"
+    },
+    {
+      "code": 6027,
+      "name": "InvalidPresaleOwner",
+      "msg": "Presale owner does not match treasury PDA"
+    },
+    {
+      "code": 6028,
+      "name": "PresaleFundsAlreadyWithdrawn",
+      "msg": "Presale funds have already been withdrawn"
     }
   ],
   "types": [
@@ -845,6 +1311,38 @@
       }
     },
     {
+      "name": "EvtPoolLaunched",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "expt_config",
+            "type": "pubkey"
+          },
+          {
+            "name": "damm_pool",
+            "type": "pubkey"
+          },
+          {
+            "name": "position_nft_mint",
+            "type": "pubkey"
+          },
+          {
+            "name": "lp_position",
+            "type": "pubkey"
+          },
+          {
+            "name": "token_a_amount",
+            "type": "u64"
+          },
+          {
+            "name": "token_b_amount",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
       "name": "EvtPresaleFinalized",
       "type": {
         "kind": "struct",
@@ -859,6 +1357,58 @@
           },
           {
             "name": "total_deposit",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "EvtPresaleFundsWithdrawn",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "expt_config",
+            "type": "pubkey"
+          },
+          {
+            "name": "presale",
+            "type": "pubkey"
+          },
+          {
+            "name": "total_withdrawn",
+            "type": "u64"
+          },
+          {
+            "name": "treasury_amount",
+            "type": "u64"
+          },
+          {
+            "name": "lp_amount",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "EvtTradingFeesClaimed",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "expt_config",
+            "type": "pubkey"
+          },
+          {
+            "name": "damm_pool",
+            "type": "pubkey"
+          },
+          {
+            "name": "fee_a_claimed",
+            "type": "u64"
+          },
+          {
+            "name": "fee_b_claimed",
             "type": "u64"
           }
         ]
@@ -972,6 +1522,20 @@
             "type": "u8"
           },
           {
+            "name": "pool_launched",
+            "docs": [
+              "Whether the DAMM v2 pool has been launched (0 = false, 1 = true)"
+            ],
+            "type": "u8"
+          },
+          {
+            "name": "presale_funds_withdrawn",
+            "docs": [
+              "Whether presale funds have been withdrawn to treasury (0 = false, 1 = true)"
+            ],
+            "type": "u8"
+          },
+          {
             "name": "_padding0",
             "docs": [
               "Padding for alignment"
@@ -979,7 +1543,7 @@
             "type": {
               "array": [
                 "u8",
-                5
+                3
               ]
             }
           },
@@ -1047,6 +1611,27 @@
             }
           },
           {
+            "name": "damm_pool",
+            "docs": [
+              "DAMM v2 pool address (set after launch_pool)"
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "position_nft_mint",
+            "docs": [
+              "Position NFT mint (for claiming fees)"
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "lp_position",
+            "docs": [
+              "LP position PDA"
+            ],
+            "type": "pubkey"
+          },
+          {
             "name": "padding",
             "docs": [
               "Reserved for future use"
@@ -1054,7 +1639,7 @@
             "type": {
               "array": [
                 "u8",
-                64
+                32
               ]
             }
           }
@@ -1073,6 +1658,40 @@
           {
             "name": "amount",
             "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "LaunchPoolArgs",
+      "docs": [
+        "Arguments for launch_pool (passed by caller)"
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "token_a_amount",
+            "docs": [
+              "Amount of token A (Expt Coin) to add as liquidity"
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "token_b_amount",
+            "docs": [
+              "Amount of token B (SOL/WSOL) to add as liquidity (75% of treasury)"
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "activation_point",
+            "docs": [
+              "Activation point (timestamp when pool becomes tradable)"
+            ],
+            "type": {
+              "option": "u64"
+            }
           }
         ]
       }
@@ -1288,10 +1907,6 @@
         "Per-user per-milestone veto stake account.",
         "PDA seeds: [b\"veto_stake\", expt_config.key(), staker.key(), &[milestone_index]]"
       ],
-      "serialization": "bytemuck",
-      "repr": {
-        "kind": "c"
-      },
       "type": {
         "kind": "struct",
         "fields": [
@@ -1315,18 +1930,6 @@
               "Which milestone index (0-2)"
             ],
             "type": "u8"
-          },
-          {
-            "name": "_padding0",
-            "docs": [
-              "Padding for alignment"
-            ],
-            "type": {
-              "array": [
-                "u8",
-                7
-              ]
-            }
           },
           {
             "name": "amount",

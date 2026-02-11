@@ -74,4 +74,19 @@ pub enum ExptError {
 
     #[msg("Milestone already resolved")]
     MilestoneAlreadyResolved,
+
+    #[msg("Pool has already been launched")]
+    PoolAlreadyLaunched,
+
+    #[msg("Pool has not been launched yet")]
+    PoolNotLaunched,
+
+    #[msg("No milestones have passed yet")]
+    NoMilestonesPassed,
+
+    #[msg("Presale owner does not match treasury PDA")]
+    InvalidPresaleOwner,
+
+    #[msg("Presale funds have already been withdrawn")]
+    PresaleFundsAlreadyWithdrawn,
 }

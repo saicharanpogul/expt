@@ -1,6 +1,7 @@
 use anchor_lang::prelude::*;
 
 use crate::constants::*;
+use crate::cpi_interfaces::presale::{PresaleState, PRESALE_PROGRAM_ID};
 use crate::errors::ExptError;
 use crate::events::EvtExptConfigCreated;
 use crate::state::*;
@@ -50,7 +51,11 @@ pub struct CreateExptConfigCtx<'info> {
     pub treasury: SystemAccount<'info>,
 
     /// Meteora presale vault account
-    /// CHECK: Validated at runtime by checking owner program
+    /// CHECK: Validated at runtime — must be owned by Presale program,
+    /// and presale.owner must equal the Treasury PDA
+    #[account(
+        owner = PRESALE_PROGRAM_ID,
+    )]
     pub presale: UncheckedAccount<'info>,
 
     /// Expt Coin mint (created externally or passed in)
@@ -90,7 +95,19 @@ pub fn handle_create_expt_config(
     // 5. Validate challenge window
     require!(args.challenge_window > 0, ExptError::InvalidPresaleParams);
 
-    // 6. Initialize the ExptConfig
+    // 6. Validate presale owner == Treasury PDA
+    //    This ensures the builder cannot create a presale with their own wallet
+    //    as the owner and steal the raised funds.
+    {
+        let presale_data = ctx.accounts.presale.try_borrow_data()?;
+        let presale_state = PresaleState::from_account_data(&presale_data)?;
+        require!(
+            presale_state.owner == ctx.accounts.treasury.key(),
+            ExptError::InvalidPresaleOwner
+        );
+    }
+
+    // 7. Initialize the ExptConfig
     let mut config = ctx.accounts.expt_config.load_init()?;
     config.builder = ctx.accounts.builder.key();
     config.name = args.name;

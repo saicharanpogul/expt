@@ -141,6 +141,8 @@ export interface ParsedExptConfig {
   status: ExptStatus;
   statusLabel: string;
   milestoneCount: number;
+  poolLaunched: boolean;
+  presaleFundsWithdrawn: boolean;
   presaleMinimumCap: BN;
   totalTreasuryReceived: BN;
   totalClaimedByBuilder: BN;
@@ -148,6 +150,9 @@ export interface ParsedExptConfig {
   vetoThresholdPercent: number;
   challengeWindow: BN;
   milestones: ParsedMilestone[];
+  dammPool: PublicKey;
+  positionNftMint: PublicKey;
+  lpPosition: PublicKey;
 }
 
 export interface ParsedVetoStake {
@@ -184,12 +189,17 @@ export interface RawExptConfig {
   treasuryBump: number;
   status: number;
   milestoneCount: number;
+  poolLaunched: number;
+  presaleFundsWithdrawn: number;
   presaleMinimumCap: BN;
   totalTreasuryReceived: BN;
   totalClaimedByBuilder: BN;
   vetoThresholdBps: number;
   challengeWindow: BN;
   milestones: RawMilestone[];
+  dammPool: PublicKey;
+  positionNftMint: PublicKey;
+  lpPosition: PublicKey;
   // padding fields omitted
 }
 
@@ -257,6 +267,8 @@ export function parseExptConfig(
     status: raw.status as ExptStatus,
     statusLabel: exptStatusLabel(raw.status),
     milestoneCount: raw.milestoneCount,
+    poolLaunched: raw.poolLaunched === 1,
+    presaleFundsWithdrawn: raw.presaleFundsWithdrawn === 1,
     presaleMinimumCap: raw.presaleMinimumCap,
     totalTreasuryReceived: raw.totalTreasuryReceived,
     totalClaimedByBuilder: raw.totalClaimedByBuilder,
@@ -264,6 +276,9 @@ export function parseExptConfig(
     vetoThresholdPercent: raw.vetoThresholdBps / 100,
     challengeWindow: raw.challengeWindow,
     milestones,
+    dammPool: raw.dammPool,
+    positionNftMint: raw.positionNftMint,
+    lpPosition: raw.lpPosition,
   };
 }
 

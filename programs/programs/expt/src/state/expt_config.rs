@@ -111,8 +111,12 @@ pub struct ExptConfig {
     pub status: u8,
     /// Number of milestones (1-3)
     pub milestone_count: u8,
+    /// Whether the DAMM v2 pool has been launched (0 = false, 1 = true)
+    pub pool_launched: u8,
+    /// Whether presale funds have been withdrawn to treasury (0 = false, 1 = true)
+    pub presale_funds_withdrawn: u8,
     /// Padding for alignment
-    pub _padding0: [u8; 5],
+    pub _padding0: [u8; 3],
     /// Minimum SOL for presale success
     pub presale_minimum_cap: u64,
     /// Total SOL received into treasury
@@ -127,13 +131,19 @@ pub struct ExptConfig {
     pub challenge_window: u64,
     /// Inline milestones
     pub milestones: [Milestone; MAX_MILESTONES],
+    /// DAMM v2 pool address (set after launch_pool)
+    pub damm_pool: Pubkey,
+    /// Position NFT mint (for claiming fees)
+    pub position_nft_mint: Pubkey,
+    /// LP position PDA
+    pub lp_position: Pubkey,
     /// Reserved for future use
-    pub padding: [u8; 64],
+    pub padding: [u8; 32],
 }
 
 // ExptConfig size:
-// 32 + 32 + 200 + 32 + 32 + 1 + 1 + 1 + 5 + 8 + 8 + 8 + 2 + 6 + 8 + (408*3) + 64 = 1664
-const _: () = assert!(std::mem::size_of::<ExptConfig>() == 1664);
+// 32 + 32 + 200 + 32 + 32 + 1 + 1 + 1 + 1 + 4 + 8 + 8 + 8 + 2 + 6 + 8 + (408*3) + 32 + 32 + 32 + 32 = 1728
+const _: () = assert!(std::mem::size_of::<ExptConfig>() == 1728);
 
 impl ExptConfig {
     pub const SPACE: usize = 8 + std::mem::size_of::<ExptConfig>();
@@ -190,5 +200,17 @@ impl ExptConfig {
             }
         }
         true
+    }
+
+    /// Check if at least one milestone has passed.
+    /// Required for fee claiming (PRD §7: fees unlock only after ≥1 milestone passes).
+    pub fn has_any_milestone_passed(&self) -> bool {
+        let passed: u8 = MilestoneStatus::Passed.into();
+        for i in 0..self.milestone_count as usize {
+            if self.milestones[i].status == passed {
+                return true;
+            }
+        }
+        false
     }
 }
