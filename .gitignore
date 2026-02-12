@@ -1,4 +1,11 @@
 .DS_Store
+node_modules
+
+# md files
 PRD.md
 RULES.md
-node_modules
+BRAND_GUIDE.md
+UXUX_GUIDE.md
+
+# other files
+temp
