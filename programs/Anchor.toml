@@ -16,4 +16,4 @@ cluster = "localnet"
 wallet = "~/.config/solana/id.json"
 
 [scripts]
-test = "bun run ts-mocha -p ./tsconfig.json -t 1000000 tests/**/*.ts"
+test = "bun run tests/localnet-e2e.ts"
