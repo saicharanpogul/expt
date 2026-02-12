@@ -264,9 +264,11 @@ The localnet E2E test validates the **full experiment lifecycle** against real M
 | **4. Withdraw Presale Funds** | Call `withdraw_presale_funds` — CPI into Meteora's `creator_withdraw` | WSOL appears in treasury ATA; 25% recorded as `total_treasury_received` |
 | **4.5. Launch DAMM v2 Pool** | CPI into DAMM v2: create pool with concentrated ±10× price range, add 75% as LP, permanently lock position | Pool account created on-chain; `pool_launched` flag set; LP permanently locked |
 | **4.6. Trading** | Execute 3 swaps on the pool (sell tokens, buy tokens, sell tokens) using the `depositor` wallet | All 3 trades succeed; fees accrue in the pool vaults |
-| **5. Milestone Submit & Resolve** | Submit proof for each milestone, wait for challenge window, then resolve | Milestones pass without veto; status becomes `Completed` after all milestones resolve |
+| **5. Milestone 0 Submit & Resolve** | Submit proof for milestone 0, wait for challenge window, resolve | Milestone 0 passes without veto |
+| **5a. Veto Flow** | Depositor vetoes milestone 1 by staking 0.05 SOL (exceeds 0.0425 SOL threshold); resolve after window | VetoStake PDA created; milestone 1 resolves as **Failed** (status=4) |
+| **5b. Milestone 2 Submit & Resolve** | Submit proof for milestone 2, wait for challenge window, resolve | Milestone 2 passes; experiment status → `Completed` (all 3 resolved) |
 | **5.5. Unwrap Treasury WSOL** | Call `unwrap_treasury_wsol` to close the WSOL ATA → native SOL | Treasury PDA holds native SOL; WSOL ATA is closed |
-| **6. Claim Builder Funds** | Builder calls `claim_builder_funds` to withdraw earned percentage | Builder receives 25% of presale (1.25 SOL); `total_claimed_by_builder` matches |
+| **6. Claim Builder Funds** | Builder calls `claim_builder_funds` to withdraw earned percentage | Builder receives **66%** (0.825 SOL); vetoed M1's 34% excluded |
 | **7. Claim Trading Fees** | CPI `claim_position_fee` into DAMM v2 to collect accrued trading fees | Non-zero fees collected (Token A); treasury balances increase |
 
 ### Key Metrics (5 SOL deposited)
@@ -276,7 +278,7 @@ The localnet E2E test validates the **full experiment lifecycle** against real M
 | Total presale deposit | 5 SOL |
 | Treasury received (25%) | 1.25 SOL |
 | LP allocation (75%) | 0.9375 SOL (+ 1M presale tokens) |
-| Builder claimed | 1.25 SOL |
+| Builder claimed | 0.825 SOL (66% — vetoed M1 excluded) |
 | Trading fees collected | ~213M raw Token A units |
 
 ### DAMM v2 Pool Configuration
@@ -294,6 +296,16 @@ The localnet E2E test validates the **full experiment lifecycle** against real M
 | Fee type | Exponential time scheduler (flat 0.05%) |
 
 > **Why concentrated range?** Using the full Q64.64 range (`MIN_SQRT_PRICE` to `MAX_SQRT_PRICE`) spreads liquidity too thin — even 1 lamport swaps cause `PriceRangeViolation`. A ±10× range concentrates liquidity around the actual price, enabling practical trading.
+
+> [!IMPORTANT]
+> **Production note — Price Range Tuning**
+>
+> When the price hits the boundary of the configured range, **swaps in that direction are blocked** (`PriceRangeViolation`). At `sqrt_min_price`, all liquidity converts to Token A (no SOL left — sells blocked). At `sqrt_max_price`, all liquidity converts to Token B (no tokens left — buys blocked). Swaps in the *opposite* direction still work, pushing the price back within range.
+>
+> The ±10× range used here is **test-only** (small ~0.94 SOL liquidity). For production launches:
+> - **Small raises (<10 SOL):** Use a wider concentrated range (e.g. ±1000×)
+> - **Larger raises (100+ SOL):** Full range (`MIN_SQRT_PRICE` to `MAX_SQRT_PRICE`) works fine — higher liquidity absorbs trades without violating bounds
+> - Range width and liquidity are inversely related — wider range = thinner liquidity per price unit
 
 ### Edge Case Tests (Bankrun)
 

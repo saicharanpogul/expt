@@ -54,7 +54,7 @@ import {
   deriveTreasuryPda,
 } from "../sdk/src/pda";
 import type { CreateExptConfigInput } from "../sdk/src/types";
-import { ExptStatus } from "../sdk/src/types";
+import { ExptStatus, MilestoneStatus } from "../sdk/src/types";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -593,14 +593,20 @@ async function main() {
       {
         description: "Milestone 1: MVP Launch",
         deliverableType: 0,
-        unlockBps: 5000, // 50%
+        unlockBps: 3300, // 33%
         deadline: nowTs + 600, // 10 min from now
       },
       {
-        description: "Milestone 2: Full Release",
+        description: "Milestone 2: Feature Complete",
         deliverableType: 1,
-        unlockBps: 5000, // 50%
+        unlockBps: 3400, // 34% — this one gets vetoed
         deadline: nowTs + 1200, // 20 min from now
+      },
+      {
+        description: "Milestone 3: Full Release",
+        deliverableType: 1,
+        unlockBps: 3300, // 33%
+        deadline: nowTs + 1800, // 30 min from now
       },
     ],
   };
@@ -1036,7 +1042,7 @@ async function main() {
   // -----------------------------------------------------------------------
   console.log("\n📝 Phase 5: Milestone Submission & Resolution\n");
 
-  // Submit milestone 0
+  // --- Milestone 0: Submit → Wait → Resolve (pass, no veto) ---
   try {
     const ix = await client.submitMilestone(builder.publicKey, {
       milestoneIndex: 0,
@@ -1050,20 +1056,23 @@ async function main() {
     fail("Failed to submit milestone 0");
   }
 
-  // Wait for challenge window to end
   info(`Waiting for challenge window (${CHALLENGE_WINDOW}s)...`);
   await sleep(CHALLENGE_WINDOW + 3);
 
-  // Resolve milestone 0
   try {
     const ix = await client.resolveMilestone(cranker.publicKey, exptConfigPda, 0);
     const tx = new Transaction().add(ix);
     await sendAndConfirmTransaction(connection, tx, [cranker], { commitment: "confirmed" });
-    ok("Milestone 0 resolved → Passed");
+    ok("Milestone 0 resolved → Passed ✓");
   } catch (e: any) {
     console.error("Resolve milestone 0 error:", e.logs || e.message);
     fail("Failed to resolve milestone 0");
   }
+
+  // -----------------------------------------------------------------------
+  // Phase 5a: Veto Flow — Milestone 1 gets vetoed and fails
+  // -----------------------------------------------------------------------
+  console.log("\n🗳️  Phase 5a: Veto Flow (Milestone 1)\n");
 
   // Submit milestone 1
   try {
@@ -1073,33 +1082,97 @@ async function main() {
     });
     const tx = new Transaction().add(ix);
     await sendAndConfirmTransaction(connection, tx, [builder], { commitment: "confirmed" });
-    ok("Milestone 1 submitted");
+    ok("Milestone 1 submitted (will be vetoed)");
   } catch (e: any) {
     console.error("Submit milestone 1 error:", e.logs || e.message);
     fail("Failed to submit milestone 1");
   }
 
-  // Wait for challenge window
+  // Depositor vetoes milestone 1
+  // Threshold = total_treasury_received * unlock_bps / 10000 * veto_threshold_bps / 10000
+  //           = 1.25 SOL * 3400/10000 * 1000/10000 = 0.0425 SOL = 42,500,000 lamports
+  // We stake 0.05 SOL (50,000,000 lamports) to exceed threshold
+  const vetoStakeAmount = new BN(50_000_000); // 0.05 SOL
+  try {
+    const ix = await client.initiateVeto(
+      depositor.publicKey,
+      exptConfigPda,
+      1, // milestone_index
+      vetoStakeAmount
+    );
+    const tx = new Transaction().add(ix);
+    await sendAndConfirmTransaction(connection, tx, [depositor], { commitment: "confirmed" });
+    ok(`Depositor staked ${vetoStakeAmount.toNumber() / LAMPORTS_PER_SOL} SOL against milestone 1`);
+  } catch (e: any) {
+    console.error("Initiate veto error:", e.logs || e.message);
+    fail("Failed to initiate veto");
+  }
+
+  // Verify VetoStake PDA
+  const [vetoStakePda] = client.deriveVetoStakePda(exptConfigPda, depositor.publicKey, 1);
+  const vetoStakeInfo = await connection.getAccountInfo(vetoStakePda);
+  if (!vetoStakeInfo) fail("VetoStake account not found");
+  ok(`VetoStake PDA created: ${vetoStakePda.toBase58()}`);
+
+  // Wait for challenge window to end
   info(`Waiting for challenge window (${CHALLENGE_WINDOW}s)...`);
   await sleep(CHALLENGE_WINDOW + 3);
 
-  // Resolve milestone 1
+  // Resolve milestone 1 — should fail due to veto exceeding threshold
   try {
     const ix = await client.resolveMilestone(cranker.publicKey, exptConfigPda, 1);
     const tx = new Transaction().add(ix);
     await sendAndConfirmTransaction(connection, tx, [cranker], { commitment: "confirmed" });
-    ok("Milestone 1 resolved → Passed");
   } catch (e: any) {
-    console.error("Resolve milestone 1 error:", e.logs || e.message);
-    fail("Failed to resolve milestone 1");
+    console.error("Resolve milestone 1 (veto) error:", e.logs || e.message);
+    fail("Failed to resolve milestone 1 (veto)");
   }
 
-  // Verify status
+  // Verify milestone 1 resolved as Failed
+  const configAfterVeto = await client.fetchExptConfig(builder.publicKey);
+  if (!configAfterVeto) fail("ExptConfig not found after veto");
+  const m1Status = configAfterVeto.milestones[1]?.status;
+  info(`Milestone 1 status after veto: ${m1Status}`);
+  if (m1Status !== MilestoneStatus.Failed) fail(`Expected milestone 1 Failed (${MilestoneStatus.Failed}), got ${m1Status}`);
+  ok("Milestone 1 resolved → Failed (vetoed) ✓");
+
+  // -----------------------------------------------------------------------
+  // Phase 5b: Milestone 2 passes normally
+  // -----------------------------------------------------------------------
+  console.log("\n📝 Phase 5b: Milestone 2 (pass)\n");
+
+  try {
+    const ix = await client.submitMilestone(builder.publicKey, {
+      milestoneIndex: 2,
+      deliverable: "https://expt.fun/proof/milestone-3",
+    });
+    const tx = new Transaction().add(ix);
+    await sendAndConfirmTransaction(connection, tx, [builder], { commitment: "confirmed" });
+    ok("Milestone 2 submitted");
+  } catch (e: any) {
+    console.error("Submit milestone 2 error:", e.logs || e.message);
+    fail("Failed to submit milestone 2");
+  }
+
+  info(`Waiting for challenge window (${CHALLENGE_WINDOW}s)...`);
+  await sleep(CHALLENGE_WINDOW + 3);
+
+  try {
+    const ix = await client.resolveMilestone(cranker.publicKey, exptConfigPda, 2);
+    const tx = new Transaction().add(ix);
+    await sendAndConfirmTransaction(connection, tx, [cranker], { commitment: "confirmed" });
+    ok("Milestone 2 resolved → Passed ✓");
+  } catch (e: any) {
+    console.error("Resolve milestone 2 error:", e.logs || e.message);
+    fail("Failed to resolve milestone 2");
+  }
+
+  // Verify final status — all milestones resolved (2 passed, 1 failed)
   const config4 = await client.fetchExptConfig(builder.publicKey);
-  if (!config4) fail("ExptConfig not found after resolving");
+  if (!config4) fail("ExptConfig not found after resolving all");
   info(`Status: ${config4.status}`);
   if (config4.status !== ExptStatus.Completed) fail(`Expected Completed, got ${config4.status}`);
-  ok("All milestones resolved — Experiment Completed");
+  ok("All milestones resolved (2 passed, 1 vetoed) — Experiment Completed");
 
   // -----------------------------------------------------------------------
   // Phase 5.5: Unwrap Treasury WSOL → Native SOL
@@ -1150,7 +1223,15 @@ async function main() {
   if (!config5) fail("ExptConfig not found after claim");
   info(`totalClaimedByBuilder: ${config5.totalClaimedByBuilder.toString()} lamports`);
   if (!config5.totalClaimedByBuilder.gtn(0)) fail("totalClaimedByBuilder should be > 0");
-  ok("Claim verified");
+  // Only passed milestones (M0: 3300 + M2: 3300 = 6600 bps = 66%)
+  // Expected: 1.25 SOL * 66% = 0.825 SOL = 825,000,000 lamports
+  const expectedClaim = 825_000_000;
+  const actualClaim = config5.totalClaimedByBuilder.toNumber();
+  info(`Expected claim: ${expectedClaim} lamports (66% of 1.25 SOL)`);
+  if (actualClaim !== expectedClaim) {
+    fail(`Claim mismatch: expected ${expectedClaim}, got ${actualClaim}`);
+  }
+  ok(`Claim verified — builder received exactly 66% (vetoed M1 excluded) ✓`);
 
   // -----------------------------------------------------------------------
   // Phase 7: Claim Trading Fees (optional — requires DAMM v2 pool)
@@ -1284,7 +1365,7 @@ async function main() {
   if (dammPoolLaunched) {
     console.log("    5.5. Launched DAMM v2 pool + permanently locked LP");
   }
-  console.log("    6. Submitted & resolved 2 milestones");
+  console.log("    6. Submitted & resolved 3 milestones (2 passed, 1 vetoed)");
   console.log("    7. Unwrapped treasury WSOL → native SOL");
   console.log("    8. Builder claimed funds from treasury");
   if (dammPoolLaunched) {
