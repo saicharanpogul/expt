@@ -109,6 +109,14 @@ pub struct LaunchPoolArgs {
     pub token_a_amount: u64,
     /// Amount of token B (SOL/WSOL) to add as liquidity (75% of treasury)
     pub token_b_amount: u64,
+    /// Pool liquidity (Q64.64 — computed off-chain)
+    pub liquidity: u128,
+    /// Initial sqrt price as Q64.64 — sqrt(token_b / token_a) << 64
+    pub sqrt_price: u128,
+    /// Min sqrt price (Q64.64) — use MIN_SQRT_PRICE (4295048016) for full range
+    pub sqrt_min_price: u128,
+    /// Max sqrt price (Q64.64) — use MAX_SQRT_PRICE (79226673521066979257578248091) for full range
+    pub sqrt_max_price: u128,
     /// Activation point (timestamp when pool becomes tradable)
     pub activation_point: Option<u64>,
 }
@@ -126,32 +134,27 @@ pub fn handle_launch_pool(ctx: Context<LaunchPoolCtx>, args: LaunchPoolArgs) -> 
         require!(config.pool_launched == 0, ExptError::PoolAlreadyLaunched);
     }
 
-    // 2. Build fee parameters: exponential decay 50% → 1% over 10 minutes, with dynamic fees
+    // 2. Build DAMM v2 pool parameters
+    //    Fee schedule: flat 0.05% fee (no time decay to stay above MIN_FEE_NUMERATOR)
+    //    Dynamic fees disabled for simplicity
     let pool_params = InitializeCustomizablePoolParameters {
-        token_a_amount: args.token_a_amount,
-        token_b_amount: args.token_b_amount,
-        params: PoolFeeParameters {
-            base_fee: BaseFeeParameters {
-                max_base_fee_bps: 5000,       // 50% anti-sniper start
-                min_base_fee_bps: 100,        // 1% steady state
-                number_of_period: 10,         // 10 periods
-                total_duration: 600,          // 10 minutes (in seconds)
-                fee_scheduler_mode: 1,        // Exponential decay
-            },
-            dynamic_fee: Some(DynamicFeeParameters {
-                filter_period: 10,
-                decay_period: 120,
-                reduction_factor: 5000,          // 50% reduction per decay
-                variable_fee_control: 14460000,
-                max_volatility_accumulator: 239,
-            }),
+        pool_fees: PoolFeeParameters {
+            base_fee: BaseFeeParameters::exponential_time_scheduler(
+                500_000,            // cliff_fee_numerator (0.05% = 500_000 / 1_000_000_000)
+                0,                  // number_of_period (0 = no time decay → flat fee)
+                0,                  // period_frequency (unused when number_of_period=0)
+                0,                  // reduction_factor (unused when number_of_period=0)
+            ),
+            dynamic_fee: None,  // Keep it simple — no dynamic fees for launch
         },
+        sqrt_min_price: args.sqrt_min_price,
+        sqrt_max_price: args.sqrt_max_price,
         has_alpha_vault: false,
+        liquidity: args.liquidity,
+        sqrt_price: args.sqrt_price,
         activation_type: 1,   // Timestamp-based
-        collect_fee_mode: 1,  // Token B Only (SOL)
+        collect_fee_mode: 0,  // Both tokens
         activation_point: args.activation_point,
-        sqrt_min_price: 0,    // Full range
-        sqrt_max_price: 0,    // Full range
     };
 
     // 3. CPI: initialize_customizable_pool
@@ -185,6 +188,8 @@ pub fn handle_launch_pool(ctx: Context<LaunchPoolCtx>, args: LaunchPoolArgs) -> 
         ctx.accounts.token_b_program.to_account_info(),    // 14: token_b_program
         ctx.accounts.token_2022_program.to_account_info(), // 15: token_2022_program
         ctx.accounts.system_program.to_account_info(),     // 16: system_program
+        ctx.accounts.event_authority.to_account_info(),    // 17: event_authority
+        ctx.accounts.damm_v2_program.to_account_info(),    // 18: damm_v2_program (self-ref)
     ];
 
     cpi_initialize_customizable_pool(
@@ -194,18 +199,19 @@ pub fn handle_launch_pool(ctx: Context<LaunchPoolCtx>, args: LaunchPoolArgs) -> 
     )?;
 
     // 4. CPI: permanent_lock_position
-    // Lock ALL liquidity permanently. We read the position to get the liquidity amount.
-    // For simplicity, we lock u128::MAX which the program clamps to actual liquidity.
+    // Lock ALL liquidity permanently using the actual liquidity amount from args.
     let lock_accounts = [
         ctx.accounts.damm_pool.to_account_info(),          // 0: pool
         ctx.accounts.damm_position.to_account_info(),      // 1: position
         ctx.accounts.position_nft_account.to_account_info(), // 2: position_nft_account
         ctx.accounts.treasury.to_account_info(),           // 3: owner (treasury)
+        ctx.accounts.event_authority.to_account_info(),    // 4: event_authority
+        ctx.accounts.damm_v2_program.to_account_info(),    // 5: damm_v2_program (self-ref)
     ];
 
     cpi_permanent_lock_position(
         &lock_accounts,
-        u128::MAX, // Lock everything
+        args.liquidity, // Lock exactly the liquidity we deposited
         &[treasury_seeds],
     )?;
 

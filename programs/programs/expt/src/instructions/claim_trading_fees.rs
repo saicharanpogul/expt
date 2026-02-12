@@ -131,6 +131,8 @@ pub fn handle_claim_trading_fees(ctx: Context<ClaimTradingFeesCtx>) -> Result<()
         ctx.accounts.treasury.to_account_info(),              // 10: owner (treasury PDA)
         ctx.accounts.token_a_program.to_account_info(),       // 11: token_a_program
         ctx.accounts.token_b_program.to_account_info(),       // 12: token_b_program
+        ctx.accounts.event_authority.to_account_info(),       // 13: event_authority
+        ctx.accounts.damm_v2_program.to_account_info(),       // 14: damm_v2_program (self-ref)
     ];
 
     cpi_claim_position_fee(

@@ -1768,6 +1768,34 @@
             "type": "u64"
           },
           {
+            "name": "liquidity",
+            "docs": [
+              "Pool liquidity (Q64.64 — computed off-chain)"
+            ],
+            "type": "u128"
+          },
+          {
+            "name": "sqrt_price",
+            "docs": [
+              "Initial sqrt price as Q64.64 — sqrt(token_b / token_a) << 64"
+            ],
+            "type": "u128"
+          },
+          {
+            "name": "sqrt_min_price",
+            "docs": [
+              "Min sqrt price (Q64.64) — use MIN_SQRT_PRICE (4295048016) for full range"
+            ],
+            "type": "u128"
+          },
+          {
+            "name": "sqrt_max_price",
+            "docs": [
+              "Max sqrt price (Q64.64) — use MAX_SQRT_PRICE (79226673521066979257578248091) for full range"
+            ],
+            "type": "u128"
+          },
+          {
             "name": "activation_point",
             "docs": [
               "Activation point (timestamp when pool becomes tradable)"

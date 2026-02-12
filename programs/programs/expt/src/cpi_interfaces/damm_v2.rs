@@ -17,11 +17,17 @@ pub const DAMM_V2_POOL_AUTHORITY: Pubkey =
 
 // ----- PDA seed constants (from DAMM v2) -----
 
-pub const CUSTOMIZABLE_POOL_PREFIX: &[u8] = b"customizable_pool";
+pub const CUSTOMIZABLE_POOL_PREFIX: &[u8] = b"cpool";
 pub const POSITION_PREFIX: &[u8] = b"position";
 pub const POSITION_NFT_ACCOUNT_PREFIX: &[u8] = b"position_nft_account";
 pub const TOKEN_VAULT_PREFIX: &[u8] = b"token_vault";
 pub const POOL_AUTHORITY_PREFIX: &[u8] = b"pool_authority";
+pub const EVENT_AUTHORITY_SEED: &[u8] = b"__event_authority";
+
+/// Derive the DAMM v2 event authority PDA.
+pub fn derive_damm_event_authority() -> (Pubkey, u8) {
+    Pubkey::find_program_address(&[EVENT_AUTHORITY_SEED], &DAMM_V2_PROGRAM_ID)
+}
 
 // ----- Instruction discriminators (Anchor sighash) -----
 // sha256("global:initialize_customizable_pool")[..8]
@@ -141,43 +147,69 @@ const fn sha256_const(data: &[u8]) -> [u8; 32] {
     result
 }
 
-// ----- Parameter structs (matching DAMM v2 Anchor serialization) -----
-
-/// Fee parameters for the pool (FeeSchedulerMode::Exponential + dynamic fees)
+/// Fee parameters for the pool — mirrors DAMM v2's BaseFeeParameters
+/// which is a raw 30-byte array (Borsh-serialized BorshFeeTimeScheduler etc.)
 #[derive(AnchorSerialize)]
 pub struct BaseFeeParameters {
-    pub max_base_fee_bps: u64,
-    pub min_base_fee_bps: u64,
-    pub number_of_period: u64,
-    pub total_duration: u64,
-    pub fee_scheduler_mode: u8,
+    pub data: [u8; 30],
 }
 
-/// Dynamic fee configuration
+impl BaseFeeParameters {
+    /// Build a FeeTimeSchedulerExponential base fee.
+    ///
+    /// Fields are serialized as Borsh in DAMM v2's BorshFeeTimeScheduler layout:
+    ///   cliff_fee_numerator: u64
+    ///   number_of_period: u16
+    ///   period_frequency: u64
+    ///   reduction_factor: u64
+    ///   base_fee_mode: u8
+    ///   padding: [u8; 3]
+    pub fn exponential_time_scheduler(
+        cliff_fee_numerator: u64,
+        number_of_period: u16,
+        period_frequency: u64,
+        reduction_factor: u64,
+    ) -> Self {
+        let mut data = [0u8; 30];
+        // FeeTimeSchedulerExponential = 1 (enum: Linear=0, Exponential=1, RateLimiter=2)
+        let base_fee_mode: u8 = 1;
+        data[0..8].copy_from_slice(&cliff_fee_numerator.to_le_bytes());
+        data[8..10].copy_from_slice(&number_of_period.to_le_bytes());
+        data[10..18].copy_from_slice(&period_frequency.to_le_bytes());
+        data[18..26].copy_from_slice(&reduction_factor.to_le_bytes());
+        data[26] = base_fee_mode;
+        // padding [27..30] stays zero
+        Self { data }
+    }
+}
+
+/// Dynamic fee configuration — mirrors DAMM v2's DynamicFeeParameters exactly
 #[derive(AnchorSerialize)]
 pub struct DynamicFeeParameters {
-    pub filter_period: u64,
-    pub decay_period: u64,
-    pub reduction_factor: u64,
-    pub variable_fee_control: u64,
-    pub max_volatility_accumulator: u64,
+    pub bin_step: u16,
+    pub bin_step_u128: u128,
+    pub filter_period: u16,
+    pub decay_period: u16,
+    pub reduction_factor: u16,
+    pub max_volatility_accumulator: u32,
+    pub variable_fee_control: u32,
 }
 
-/// Parameters for initialize_customizable_pool
+/// Parameters for initialize_customizable_pool — must match DAMM v2's struct exactly
 #[derive(AnchorSerialize)]
 pub struct InitializeCustomizablePoolParameters {
-    pub token_a_amount: u64,
-    pub token_b_amount: u64,
-    pub params: PoolFeeParameters,
+    pub pool_fees: PoolFeeParameters,
+    pub sqrt_min_price: u128,
+    pub sqrt_max_price: u128,
     pub has_alpha_vault: bool,
+    pub liquidity: u128,
+    pub sqrt_price: u128,
     pub activation_type: u8,
     pub collect_fee_mode: u8,
     pub activation_point: Option<u64>,
-    pub sqrt_min_price: u128,
-    pub sqrt_max_price: u128,
 }
 
-/// Pool fee parameters embedded in InitializeCustomizablePoolParameters
+/// Pool fee parameters — mirrors DAMM v2's PoolFeeParameters
 #[derive(AnchorSerialize)]
 pub struct PoolFeeParameters {
     pub base_fee: BaseFeeParameters,
@@ -278,6 +310,8 @@ pub fn cpi_initialize_customizable_pool<'info>(
         AccountMeta::new_readonly(accounts[14].key(), false),  // token_b_program
         AccountMeta::new_readonly(accounts[15].key(), false),  // token_2022_program
         AccountMeta::new_readonly(accounts[16].key(), false),  // system_program
+        AccountMeta::new_readonly(accounts[17].key(), false),  // event_authority
+        AccountMeta::new_readonly(accounts[18].key(), false),  // damm_v2_program (self-ref)
     ];
 
     let ix = Instruction {
@@ -313,6 +347,8 @@ pub fn cpi_permanent_lock_position<'info>(
         AccountMeta::new(accounts[1].key(), false),            // position (writable)
         AccountMeta::new_readonly(accounts[2].key(), false),   // position_nft_account
         AccountMeta::new_readonly(accounts[3].key(), true),    // owner (signer)
+        AccountMeta::new_readonly(accounts[4].key(), false),   // event_authority
+        AccountMeta::new_readonly(accounts[5].key(), false),   // damm_v2_program (self-ref)
     ];
 
     let ix = Instruction {
@@ -363,6 +399,8 @@ pub fn cpi_claim_position_fee<'info>(
         AccountMeta::new_readonly(accounts[10].key(), true),   // owner (signer)
         AccountMeta::new_readonly(accounts[11].key(), false),  // token_a_program
         AccountMeta::new_readonly(accounts[12].key(), false),  // token_b_program
+        AccountMeta::new_readonly(accounts[13].key(), false),  // event_authority
+        AccountMeta::new_readonly(accounts[14].key(), false),  // damm_v2_program (self-ref)
     ];
 
     let ix = Instruction {

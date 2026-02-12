@@ -14,6 +14,7 @@ pub mod cpi_interfaces;
 
 declare_id!("9EY3BccFR7QprDNFbZ2fqy5t6wzgpiAYg24mcjYu5nYw");
 
+#[allow(deprecated)]
 #[program]
 pub mod expt {
     use super::*;

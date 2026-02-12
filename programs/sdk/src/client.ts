@@ -397,19 +397,20 @@ export class ExptClient {
     payer: PublicKey,
     exptConfig: PublicKey,
     dammAccounts: {
-      pool: PublicKey;
-      position: PublicKey;
+      dammPoolAuthority: PublicKey;
+      dammPool: PublicKey;
+      dammPosition: PublicKey;
       positionNftAccount: PublicKey;
-      poolTokenAVault: PublicKey;
-      poolTokenBVault: PublicKey;
+      tokenAVault: PublicKey;
+      tokenBVault: PublicKey;
       treasuryTokenA: PublicKey;
       treasuryTokenB: PublicKey;
       tokenAMint: PublicKey;
       tokenBMint: PublicKey;
-      poolAuthority: PublicKey;
       tokenAProgram: PublicKey;
       tokenBProgram: PublicKey;
-      dammProgram: PublicKey;
+      dammV2Program: PublicKey;
+      eventAuthority: PublicKey;
     }
   ): Promise<TransactionInstruction> {
     const [treasuryPda] = this.deriveTreasuryPda(exptConfig);

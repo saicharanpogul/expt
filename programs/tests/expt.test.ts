@@ -986,3 +986,645 @@ describe("Expt Program — Veto Mechanics", () => {
     expect(updatedConfig.status).toBe(4); // Completed (only 1 milestone)
   });
 });
+
+// ---------------------------------------------------------------------------
+// Veto Threshold Exceeded Suite (separate experiment)
+// ---------------------------------------------------------------------------
+
+describe("Expt Program — Veto Threshold Exceeded", () => {
+  let provider: BankrunProvider;
+  let program: Program;
+  let context: any;
+
+  const builder = Keypair.generate();
+  const staker = Keypair.generate();
+  const presaleKeypair = Keypair.generate();
+  const mintKeypair = Keypair.generate();
+  const cranker = Keypair.generate();
+
+  let exptConfigPda: PublicKey;
+  let treasuryPda: PublicKey;
+
+  beforeAll(async () => {
+    [exptConfigPda] = deriveExptConfigPda(builder.publicKey);
+    [treasuryPda] = deriveTreasuryPda(exptConfigPda);
+
+    context = await startAnchor(".", [], [
+      {
+        address: builder.publicKey,
+        info: {
+          lamports: 100 * LAMPORTS_PER_SOL,
+          data: Buffer.alloc(0),
+          owner: SystemProgram.programId,
+          executable: false,
+        },
+      },
+      {
+        address: staker.publicKey,
+        info: {
+          lamports: 100 * LAMPORTS_PER_SOL,
+          data: Buffer.alloc(0),
+          owner: SystemProgram.programId,
+          executable: false,
+        },
+      },
+      {
+        address: cranker.publicKey,
+        info: {
+          lamports: 10 * LAMPORTS_PER_SOL,
+          data: Buffer.alloc(0),
+          owner: SystemProgram.programId,
+          executable: false,
+        },
+      },
+      {
+        address: presaleKeypair.publicKey,
+        info: {
+          lamports: 5 * LAMPORTS_PER_SOL,
+          data: craftPresaleAccountData({
+            owner: treasuryPda,
+            minimumCap: BigInt(1 * LAMPORTS_PER_SOL),
+            endTime: PRESALE_END,
+            totalDeposit: BigInt(5 * LAMPORTS_PER_SOL),
+          }),
+          owner: PRESALE_PROGRAM_ID,
+          executable: false,
+        },
+      },
+    ]);
+
+    provider = new BankrunProvider(context);
+    setProvider(provider as any);
+    program = new Program(IDL, provider as any);
+
+    setClock(context, T0);
+
+    // Setup: create experiment with 2 milestones (50% each)
+    await program.methods
+      .createExptConfig({
+        name: stringToBytes("Veto Fail Test", MAX_NAME_LEN),
+        uri: stringToBytes("https://vetofail.test", MAX_URI_LEN),
+        presaleMinimumCap: new BN(1 * LAMPORTS_PER_SOL),
+        vetoThresholdBps: 1000, // 10%
+        challengeWindow: new BN(CHALLENGE_WINDOW),
+        milestones: [
+          {
+            description: stringToBytes("Milestone A", MAX_MILESTONE_DESC_LEN),
+            deliverableType: 1,
+            unlockBps: 5000, // 50%
+            deadline: new BN(Number(MILESTONE_0_DEADLINE)),
+          },
+          {
+            description: stringToBytes("Milestone B", MAX_MILESTONE_DESC_LEN),
+            deliverableType: 1,
+            unlockBps: 5000, // 50%
+            deadline: new BN(Number(MILESTONE_1_DEADLINE)),
+          },
+        ],
+      })
+      .accounts({
+        builder: builder.publicKey,
+        exptConfig: exptConfigPda,
+        treasury: treasuryPda,
+        presale: presaleKeypair.publicKey,
+        mint: mintKeypair.publicKey,
+        systemProgram: SystemProgram.programId,
+      })
+      .signers([builder])
+      .rpc();
+
+    // Finalize
+    setClock(context, PRESALE_END + 1n);
+    await program.methods
+      .finalizePresale()
+      .accounts({
+        payer: cranker.publicKey,
+        exptConfig: exptConfigPda,
+        presale: presaleKeypair.publicKey,
+      })
+      .signers([cranker])
+      .rpc();
+
+    // Inject totalTreasuryReceived and transfer SOL to treasury
+    const rawAccount = await context.banksClient.getAccount(exptConfigPda);
+    const accountData = Buffer.from(rawAccount!.data);
+    const TOTAL_TREASURY_RECEIVED_OFFSET = 8 + 344;
+    accountData.writeBigUInt64LE(BigInt(10 * LAMPORTS_PER_SOL), TOTAL_TREASURY_RECEIVED_OFFSET);
+    // Also set presale_funds_withdrawn = 1 (offset: 8 + 332)
+    const PRESALE_FUNDS_WITHDRAWN_OFFSET = 8 + 332;
+    accountData.writeUInt8(1, PRESALE_FUNDS_WITHDRAWN_OFFSET);
+    context.setAccount(exptConfigPda, {
+      lamports: rawAccount!.lamports,
+      data: accountData,
+      owner: PROGRAM_ID,
+      executable: false,
+    });
+
+    // Fund treasury PDA
+    const fundIx = SystemProgram.transfer({
+      fromPubkey: builder.publicKey,
+      toPubkey: treasuryPda,
+      lamports: 10 * LAMPORTS_PER_SOL,
+    });
+    const fundTx = new Transaction().add(fundIx);
+    fundTx.recentBlockhash = context.lastBlockhash;
+    fundTx.sign(builder);
+    await context.banksClient.processTransaction(fundTx);
+  });
+
+  it("should resolve milestone as Failed when veto exceeds threshold", async () => {
+    // Submit milestone 0
+    setClock(context, PRESALE_END + 10n);
+    await program.methods
+      .submitMilestone({
+        milestoneIndex: 0,
+        deliverable: stringToBytes("https://github.com/vetofail", MAX_DELIVERABLE_LEN),
+      })
+      .accounts({
+        builder: builder.publicKey,
+        exptConfig: exptConfigPda,
+      })
+      .signers([builder])
+      .rpc();
+
+    // Threshold = totalTreasuryReceived(10 SOL) * unlock_bps(5000)/10000 * veto_threshold(1000)/10000
+    //           = 10 SOL * 0.5 * 0.1 = 0.5 SOL
+    // Stake 1 SOL > 0.5 SOL → FAIL
+    const [vetoStakePda] = deriveVetoStakePda(exptConfigPda, staker.publicKey, 0);
+
+    await program.methods
+      .initiateVeto({ milestoneIndex: 0, amount: new BN(1 * LAMPORTS_PER_SOL) })
+      .accounts({
+        staker: staker.publicKey,
+        exptConfig: exptConfigPda,
+        vetoStake: vetoStakePda,
+        treasury: treasuryPda,
+        systemProgram: SystemProgram.programId,
+      })
+      .signers([staker])
+      .rpc();
+
+    // Verify milestone is now Challenged
+    const config = await (program.account as any).exptConfig.fetch(exptConfigPda);
+    expect(config.milestones[0].status).toBe(2); // Challenged
+
+    // Resolve after challenge window → should fail the milestone
+    const challengeEnd = config.milestones[0].challengeWindowEnd.toNumber();
+    setClock(context, BigInt(challengeEnd) + 200n);
+
+    await program.methods
+      .resolveMilestone({ milestoneIndex: 0 })
+      .accounts({
+        payer: cranker.publicKey,
+        exptConfig: exptConfigPda,
+      })
+      .signers([cranker])
+      .rpc();
+
+    const updatedConfig = await (program.account as any).exptConfig.fetch(exptConfigPda);
+    expect(updatedConfig.milestones[0].status).toBe(4); // Failed
+    expect(updatedConfig.status).toBe(3); // Still Active (milestone 1 pending)
+  });
+
+  it("should not allow builder to claim failed milestone funds", async () => {
+    // Milestone 0 failed (50% locked), no other milestones passed
+    // claimable_amount = 0 (no unlocked bps)
+    try {
+      await program.methods
+        .claimBuilderFunds()
+        .accounts({
+          builder: builder.publicKey,
+          exptConfig: exptConfigPda,
+          treasury: treasuryPda,
+          systemProgram: SystemProgram.programId,
+        })
+        .signers([builder])
+        .rpc();
+      expect(true).toBe(false); // Should not reach here
+    } catch (err: any) {
+      expect(err.toString()).toContain("NoFundsAvailable");
+    }
+  });
+
+  it("should allow builder to claim after passing milestone 1 (only 50%)", async () => {
+    // Submit and pass milestone 1
+    const SUBMIT_TIME = PRESALE_END + 5000n;
+    setClock(context, SUBMIT_TIME);
+
+    await program.methods
+      .submitMilestone({
+        milestoneIndex: 1,
+        deliverable: stringToBytes("https://github.com/ms1-pass", MAX_DELIVERABLE_LEN),
+      })
+      .accounts({
+        builder: builder.publicKey,
+        exptConfig: exptConfigPda,
+      })
+      .signers([builder])
+      .rpc();
+
+    const config = await (program.account as any).exptConfig.fetch(exptConfigPda);
+    const challengeEnd = config.milestones[1].challengeWindowEnd.toNumber();
+    setClock(context, BigInt(challengeEnd) + 200n);
+
+    await program.methods
+      .resolveMilestone({ milestoneIndex: 1 })
+      .accounts({
+        payer: cranker.publicKey,
+        exptConfig: exptConfigPda,
+      })
+      .signers([cranker])
+      .rpc();
+
+    // Builder should be able to claim 50% of 10 SOL = 5 SOL (milestone 1 only)
+    await program.methods
+      .claimBuilderFunds()
+      .accounts({
+        builder: builder.publicKey,
+        exptConfig: exptConfigPda,
+        treasury: treasuryPda,
+        systemProgram: SystemProgram.programId,
+      })
+      .signers([builder])
+      .rpc();
+
+    const updatedConfig = await (program.account as any).exptConfig.fetch(exptConfigPda);
+    // 50% of 10 SOL = 5 SOL
+    expect(updatedConfig.totalClaimedByBuilder.eq(new BN(5 * LAMPORTS_PER_SOL))).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Edge Cases Suite
+// ---------------------------------------------------------------------------
+
+describe("Expt Program — Edge Cases", () => {
+  let provider: BankrunProvider;
+  let program: Program;
+  let context: any;
+
+  const builder = Keypair.generate();
+  const cranker = Keypair.generate();
+  const presaleKeypair = Keypair.generate();
+  const mintKeypair = Keypair.generate();
+
+  let exptConfigPda: PublicKey;
+  let treasuryPda: PublicKey;
+
+  beforeAll(async () => {
+    [exptConfigPda] = deriveExptConfigPda(builder.publicKey);
+    [treasuryPda] = deriveTreasuryPda(exptConfigPda);
+
+    context = await startAnchor(".", [], [
+      {
+        address: builder.publicKey,
+        info: {
+          lamports: 100 * LAMPORTS_PER_SOL,
+          data: Buffer.alloc(0),
+          owner: SystemProgram.programId,
+          executable: false,
+        },
+      },
+      {
+        address: cranker.publicKey,
+        info: {
+          lamports: 10 * LAMPORTS_PER_SOL,
+          data: Buffer.alloc(0),
+          owner: SystemProgram.programId,
+          executable: false,
+        },
+      },
+      {
+        address: presaleKeypair.publicKey,
+        info: {
+          lamports: 5 * LAMPORTS_PER_SOL,
+          data: craftPresaleAccountData({
+            owner: treasuryPda,
+            minimumCap: BigInt(1 * LAMPORTS_PER_SOL),
+            endTime: PRESALE_END,
+            totalDeposit: BigInt(5 * LAMPORTS_PER_SOL),
+          }),
+          owner: PRESALE_PROGRAM_ID,
+          executable: false,
+        },
+      },
+    ]);
+
+    provider = new BankrunProvider(context);
+    setProvider(provider as any);
+    program = new Program(IDL, provider as any);
+
+    setClock(context, T0);
+
+    // Create experiment with 2 milestones
+    await program.methods
+      .createExptConfig({
+        name: stringToBytes("Edge Case Test", MAX_NAME_LEN),
+        uri: stringToBytes("https://edge.test", MAX_URI_LEN),
+        presaleMinimumCap: new BN(1 * LAMPORTS_PER_SOL),
+        vetoThresholdBps: 1000,
+        challengeWindow: new BN(CHALLENGE_WINDOW),
+        milestones: [
+          {
+            description: stringToBytes("MS 0", MAX_MILESTONE_DESC_LEN),
+            deliverableType: 1,
+            unlockBps: 5000,
+            deadline: new BN(Number(MILESTONE_0_DEADLINE)),
+          },
+          {
+            description: stringToBytes("MS 1", MAX_MILESTONE_DESC_LEN),
+            deliverableType: 1,
+            unlockBps: 5000,
+            deadline: new BN(Number(MILESTONE_1_DEADLINE)),
+          },
+        ],
+      })
+      .accounts({
+        builder: builder.publicKey,
+        exptConfig: exptConfigPda,
+        treasury: treasuryPda,
+        presale: presaleKeypair.publicKey,
+        mint: mintKeypair.publicKey,
+        systemProgram: SystemProgram.programId,
+      })
+      .signers([builder])
+      .rpc();
+
+    // Finalize + inject treasury
+    setClock(context, PRESALE_END + 1n);
+    await program.methods
+      .finalizePresale()
+      .accounts({
+        payer: cranker.publicKey,
+        exptConfig: exptConfigPda,
+        presale: presaleKeypair.publicKey,
+      })
+      .signers([cranker])
+      .rpc();
+
+    // Inject totalTreasuryReceived and presale_funds_withdrawn
+    const rawAccount = await context.banksClient.getAccount(exptConfigPda);
+    const accountData = Buffer.from(rawAccount!.data);
+    const TOTAL_TREASURY_RECEIVED_OFFSET = 8 + 344;
+    const PRESALE_FUNDS_WITHDRAWN_OFFSET = 8 + 332;
+    accountData.writeBigUInt64LE(BigInt(5 * LAMPORTS_PER_SOL), TOTAL_TREASURY_RECEIVED_OFFSET);
+    accountData.writeUInt8(1, PRESALE_FUNDS_WITHDRAWN_OFFSET);
+    context.setAccount(exptConfigPda, {
+      lamports: rawAccount!.lamports,
+      data: accountData,
+      owner: PROGRAM_ID,
+      executable: false,
+    });
+
+    // Fund treasury
+    const fundIx = SystemProgram.transfer({
+      fromPubkey: builder.publicKey,
+      toPubkey: treasuryPda,
+      lamports: 5 * LAMPORTS_PER_SOL,
+    });
+    const fundTx = new Transaction().add(fundIx);
+    fundTx.recentBlockhash = context.lastBlockhash;
+    fundTx.sign(builder);
+    await context.banksClient.processTransaction(fundTx);
+  });
+
+  it("should reject duplicate milestone submission (same index)", async () => {
+    setClock(context, PRESALE_END + 10n);
+
+    // First submission should succeed
+    await program.methods
+      .submitMilestone({
+        milestoneIndex: 0,
+        deliverable: stringToBytes("https://first.com", MAX_DELIVERABLE_LEN),
+      })
+      .accounts({
+        builder: builder.publicKey,
+        exptConfig: exptConfigPda,
+      })
+      .signers([builder])
+      .rpc();
+
+    // Second submission of same milestone should fail
+    try {
+      await program.methods
+        .submitMilestone({
+          milestoneIndex: 0,
+          deliverable: stringToBytes("https://duplicate.com", MAX_DELIVERABLE_LEN),
+        })
+        .accounts({
+          builder: builder.publicKey,
+          exptConfig: exptConfigPda,
+        })
+        .signers([builder])
+        .rpc();
+      expect(true).toBe(false);
+    } catch (err: any) {
+      expect(err.toString()).toContain("MilestoneNotPending");
+    }
+  });
+
+  it("should reject claim_builder_funds with 0 claimable (no milestones passed)", async () => {
+    // Milestone 0 is submitted but not resolved yet → no unlocked funds
+    try {
+      await program.methods
+        .claimBuilderFunds()
+        .accounts({
+          builder: builder.publicKey,
+          exptConfig: exptConfigPda,
+          treasury: treasuryPda,
+          systemProgram: SystemProgram.programId,
+        })
+        .signers([builder])
+        .rpc();
+      expect(true).toBe(false);
+    } catch (err: any) {
+      expect(err.toString()).toContain("NoFundsAvailable");
+    }
+  });
+
+  it("should reject finalize_presale after already finalized", async () => {
+    // Already finalized in beforeAll → status is Active
+    try {
+      await program.methods
+        .finalizePresale()
+        .accounts({
+          payer: cranker.publicKey,
+          exptConfig: exptConfigPda,
+          presale: presaleKeypair.publicKey,
+        })
+        .signers([cranker])
+        .rpc();
+      expect(true).toBe(false);
+    } catch (err: any) {
+      expect(err.toString()).toContain("InvalidStatus");
+    }
+  });
+
+  it("should reject submit_milestone with invalid index", async () => {
+    try {
+      await program.methods
+        .submitMilestone({
+          milestoneIndex: 5, // Out of bounds
+          deliverable: stringToBytes("https://bad.com", MAX_DELIVERABLE_LEN),
+        })
+        .accounts({
+          builder: builder.publicKey,
+          exptConfig: exptConfigPda,
+        })
+        .signers([builder])
+        .rpc();
+      expect(true).toBe(false);
+    } catch (err: any) {
+      expect(err.toString()).toContain("InvalidMilestoneIndex");
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Presale Failure Path Suite
+// ---------------------------------------------------------------------------
+
+describe("Expt Program — Presale Failure Path", () => {
+  let provider: BankrunProvider;
+  let program: Program;
+  let context: any;
+
+  const builder = Keypair.generate();
+  const cranker = Keypair.generate();
+  const presaleKeypair = Keypair.generate();
+  const mintKeypair = Keypair.generate();
+
+  let exptConfigPda: PublicKey;
+  let treasuryPda: PublicKey;
+
+  beforeAll(async () => {
+    [exptConfigPda] = deriveExptConfigPda(builder.publicKey);
+    [treasuryPda] = deriveTreasuryPda(exptConfigPda);
+
+    context = await startAnchor(".", [], [
+      {
+        address: builder.publicKey,
+        info: {
+          lamports: 100 * LAMPORTS_PER_SOL,
+          data: Buffer.alloc(0),
+          owner: SystemProgram.programId,
+          executable: false,
+        },
+      },
+      {
+        address: cranker.publicKey,
+        info: {
+          lamports: 10 * LAMPORTS_PER_SOL,
+          data: Buffer.alloc(0),
+          owner: SystemProgram.programId,
+          executable: false,
+        },
+      },
+      {
+        // Presale with HIGH min cap but LOW total deposit → should FAIL
+        address: presaleKeypair.publicKey,
+        info: {
+          lamports: 50 * LAMPORTS_PER_SOL,
+          data: craftPresaleAccountData({
+            owner: treasuryPda,
+            minimumCap: BigInt(50 * LAMPORTS_PER_SOL), // 50 SOL min
+            endTime: PRESALE_END,
+            totalDeposit: BigInt(2 * LAMPORTS_PER_SOL), // only 2 SOL deposited
+          }),
+          owner: PRESALE_PROGRAM_ID,
+          executable: false,
+        },
+      },
+    ]);
+
+    provider = new BankrunProvider(context);
+    setProvider(provider as any);
+    program = new Program(IDL, provider as any);
+
+    setClock(context, T0);
+
+    // Create experiment
+    await program.methods
+      .createExptConfig({
+        name: stringToBytes("Fail Path Test", MAX_NAME_LEN),
+        uri: stringToBytes("https://failpath.test", MAX_URI_LEN),
+        presaleMinimumCap: new BN(50 * LAMPORTS_PER_SOL),
+        vetoThresholdBps: 1000,
+        challengeWindow: new BN(CHALLENGE_WINDOW),
+        milestones: [
+          {
+            description: stringToBytes("Never happens", MAX_MILESTONE_DESC_LEN),
+            deliverableType: 1,
+            unlockBps: 10000,
+            deadline: new BN(Number(MILESTONE_0_DEADLINE)),
+          },
+        ],
+      })
+      .accounts({
+        builder: builder.publicKey,
+        exptConfig: exptConfigPda,
+        treasury: treasuryPda,
+        presale: presaleKeypair.publicKey,
+        mint: mintKeypair.publicKey,
+        systemProgram: SystemProgram.programId,
+      })
+      .signers([builder])
+      .rpc();
+  });
+
+  it("should set PresaleFailed when deposits below minimum cap", async () => {
+    setClock(context, PRESALE_END + 1n);
+
+    await program.methods
+      .finalizePresale()
+      .accounts({
+        payer: cranker.publicKey,
+        exptConfig: exptConfigPda,
+        presale: presaleKeypair.publicKey,
+      })
+      .signers([cranker])
+      .rpc();
+
+    const config = await (program.account as any).exptConfig.fetch(exptConfigPda);
+    expect(config.status).toBe(2); // PresaleFailed
+  });
+
+  it("should reject submit_milestone when presale failed", async () => {
+    setClock(context, PRESALE_END + 10n);
+
+    try {
+      await program.methods
+        .submitMilestone({
+          milestoneIndex: 0,
+          deliverable: stringToBytes("https://nope.com", MAX_DELIVERABLE_LEN),
+        })
+        .accounts({
+          builder: builder.publicKey,
+          exptConfig: exptConfigPda,
+        })
+        .signers([builder])
+        .rpc();
+      expect(true).toBe(false);
+    } catch (err: any) {
+      expect(err.toString()).toContain("InvalidStatus");
+    }
+  });
+
+  it("should reject claim_builder_funds when presale failed", async () => {
+    try {
+      await program.methods
+        .claimBuilderFunds()
+        .accounts({
+          builder: builder.publicKey,
+          exptConfig: exptConfigPda,
+          treasury: treasuryPda,
+          systemProgram: SystemProgram.programId,
+        })
+        .signers([builder])
+        .rpc();
+      expect(true).toBe(false);
+    } catch (err: any) {
+      expect(err.toString()).toContain("InvalidStatus");
+    }
+  });
+});

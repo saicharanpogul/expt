@@ -262,9 +262,12 @@ The localnet E2E test validates the **full experiment lifecycle** against real M
 | **2. Deposit** | Create an escrow and deposit 5 SOL (WSOL) into the presale | Escrow created; quote tokens transferred into the presale vault |
 | **3. Create Expt & Finalize** | Call `create_expt_config` to define milestones, then `finalize_presale` after presale ends | ExptConfig PDA initialized; status transitions to `Active` when min cap is met |
 | **4. Withdraw Presale Funds** | Call `withdraw_presale_funds` — CPI into Meteora's `creator_withdraw` | WSOL appears in treasury ATA; 25% recorded as `total_treasury_received` |
+| **4.5. Launch DAMM v2 Pool** | CPI into DAMM v2: create pool with concentrated ±10× price range, add 75% as LP, permanently lock position | Pool account created on-chain; `pool_launched` flag set; LP permanently locked |
+| **4.6. Trading** | Execute 3 swaps on the pool (sell tokens, buy tokens, sell tokens) using the `depositor` wallet | All 3 trades succeed; fees accrue in the pool vaults |
 | **5. Milestone Submit & Resolve** | Submit proof for each milestone, wait for challenge window, then resolve | Milestones pass without veto; status becomes `Completed` after all milestones resolve |
-| **5.5 Unwrap Treasury WSOL** | Call `unwrap_treasury_wsol` to close the WSOL ATA → native SOL | Treasury PDA holds native SOL; WSOL ATA is closed |
+| **5.5. Unwrap Treasury WSOL** | Call `unwrap_treasury_wsol` to close the WSOL ATA → native SOL | Treasury PDA holds native SOL; WSOL ATA is closed |
 | **6. Claim Builder Funds** | Builder calls `claim_builder_funds` to withdraw earned percentage | Builder receives 25% of presale (1.25 SOL); `total_claimed_by_builder` matches |
+| **7. Claim Trading Fees** | CPI `claim_position_fee` into DAMM v2 to collect accrued trading fees | Non-zero fees collected (Token A); treasury balances increase |
 
 ### Key Metrics (5 SOL deposited)
 
@@ -272,8 +275,39 @@ The localnet E2E test validates the **full experiment lifecycle** against real M
 |--------|-------|
 | Total presale deposit | 5 SOL |
 | Treasury received (25%) | 1.25 SOL |
-| LP allocation (75%) | 3.75 SOL |
+| LP allocation (75%) | 0.9375 SOL (+ 1M presale tokens) |
 | Builder claimed | 1.25 SOL |
+| Trading fees collected | ~213M raw Token A units |
+
+### DAMM v2 Pool Configuration
+
+| Parameter | Value |
+|-----------|-------|
+| Pool type | Customizable (concentrated liquidity) |
+| Price range | **±10× from initial price** (not full range) |
+| `sqrt_price` | `sqrt(token_b / token_a) × 2^64` (Q64.64) |
+| `sqrt_min_price` | `sqrt_price / √10` |
+| `sqrt_max_price` | `sqrt_price × √10` |
+| Liquidity | `amount_b × 2^128 / (sqrt_price - sqrt_min_price)` |
+| Activation | Timestamp-based, 30s delay after creation |
+| LP lock | 100% permanently locked |
+| Fee type | Exponential time scheduler (flat 0.05%) |
+
+> **Why concentrated range?** Using the full Q64.64 range (`MIN_SQRT_PRICE` to `MAX_SQRT_PRICE`) spreads liquidity too thin — even 1 lamport swaps cause `PriceRangeViolation`. A ±10× range concentrates liquidity around the actual price, enabling practical trading.
+
+### Edge Case Tests (Bankrun)
+
+In addition to the happy-path E2E test, the following edge cases are tested in isolation:
+
+| Test | Expected Behavior |
+|------|-------------------|
+| Duplicate `submit_milestone` | Rejects with `MilestoneNotPending` |
+| Double `finalize_presale` | Rejects with `InvalidStatus` |
+| `submit_milestone` with invalid index | Rejects with `InvalidMilestoneIndex` |
+| `resolve_milestone` before challenge window | Rejects with `ChallengeWindowOpen` |
+| Presale failure (min cap not met) | Status → `PresaleFailed`; `submit_milestone` and `claim_builder_funds` both blocked |
+| Veto exceeds threshold | Milestone → `Vetoed (5)` |
+| Veto below threshold | Milestone → `Passed` |
 
 ### Running the E2E Test
 
@@ -292,7 +326,7 @@ solana program deploy target/deploy/expt.so --url localhost
 bun run tests/localnet-e2e.ts
 ```
 
-> **Note:** The test takes ~2 minutes due to presale timing (start/end delays and milestone challenge windows).
+> **Note:** The test takes ~3 minutes due to presale timing (start/end delays), pool activation wait (35s), and milestone challenge windows.
 
 ---
 
