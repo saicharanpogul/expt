@@ -89,4 +89,7 @@ pub enum ExptError {
 
     #[msg("Presale funds have already been withdrawn")]
     PresaleFundsAlreadyWithdrawn,
+
+    #[msg("Presale funds have not been withdrawn yet")]
+    PresaleFundsNotWithdrawn,
 }

@@ -268,6 +268,12 @@ export class ExptClient {
     );
     const [treasuryPda] = this.deriveTreasuryPda(exptConfig);
 
+    // Derive event_authority PDA for presale's #[event_cpi]
+    const [presaleEventAuthority] = PublicKey.findProgramAddressSync(
+      [Buffer.from("__event_authority")],
+      PRESALE_PROGRAM_ID
+    );
+
     return await (this.program.methods as any)
       .withdrawPresaleFunds()
       .accounts({
@@ -281,7 +287,32 @@ export class ExptClient {
         quoteMint,
         tokenProgram,
         memoProgram: MEMO_PROGRAM_ID,
+        presaleEventAuthority,
         presaleProgram: PRESALE_PROGRAM_ID,
+      })
+      .instruction();
+  }
+
+  /**
+   * Unwrap WSOL from treasury ATA to native SOL.
+   * Must be called after withdrawPresaleFunds and before claimBuilderFunds.
+   * Permissionless — anyone can trigger this.
+   */
+  async unwrapTreasuryWsol(
+    payer: PublicKey,
+    exptConfig: PublicKey,
+    treasuryWsolAta: PublicKey
+  ): Promise<TransactionInstruction> {
+    const [treasuryPda] = this.deriveTreasuryPda(exptConfig);
+
+    return await (this.program.methods as any)
+      .unwrapTreasuryWsol()
+      .accounts({
+        payer,
+        exptConfig,
+        treasury: treasuryPda,
+        treasuryWsolAta,
+        tokenProgram: new PublicKey("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"),
       })
       .instruction();
   }

@@ -77,4 +77,10 @@ pub mod expt {
     pub fn withdraw_presale_funds(ctx: Context<WithdrawPresaleFundsCtx>) -> Result<()> {
         instructions::handle_withdraw_presale_funds(ctx)
     }
+
+    /// Unwrap WSOL from treasury ATA to native SOL.
+    /// Must be called after withdraw_presale_funds and before claim_builder_funds.
+    pub fn unwrap_treasury_wsol(ctx: Context<UnwrapTreasuryWsolCtx>) -> Result<()> {
+        instructions::handle_unwrap_treasury_wsol(ctx)
+    }
 }

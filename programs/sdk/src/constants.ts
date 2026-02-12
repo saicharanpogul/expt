@@ -43,7 +43,7 @@ export const DAMM_V2_PROGRAM_ID = new PublicKey(
 );
 
 export const PRESALE_AUTHORITY = new PublicKey(
-  "AUh8bm2XsMfex3KjYGcM3G4uBqUNSDw6HEhWaWMYnyPH"
+  "4Xgt6XKZiowAGNdPWngVAwpYbSwAmbBnRBPtCFXhrypc"
 );
 
 export const MEMO_PROGRAM_ID = new PublicKey(

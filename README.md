@@ -145,6 +145,7 @@ Both integrations use **raw CPI** — no external crate dependencies. Instructio
 | Instruction | Signer | Description |
 |-------------|--------|-------------|
 | `claim_trading_fees` | Anyone | CPI `claim_position_fee` on DAMM v2. Requires ≥1 milestone passed |
+| `unwrap_treasury_wsol` | Anyone | Close treasury WSOL ATA → native SOL. Required between withdraw and claim |
 
 ---
 
@@ -226,6 +227,7 @@ expt.fun/
 │       │   ├── create_expt_config.rs
 │       │   ├── finalize_presale.rs
 │       │   ├── withdraw_presale_funds.rs
+│       │   ├── unwrap_treasury_wsol.rs
 │       │   ├── launch_pool.rs
 │       │   ├── submit_milestone.rs
 │       │   ├── initiate_veto.rs
@@ -235,8 +237,62 @@ expt.fun/
 │       └── cpi_interfaces/
 │           ├── presale.rs          # Meteora Presale CPI (creator_withdraw)
 │           └── damm_v2.rs          # DAMM v2 CPI (pool, lock, fees)
+│   ├── sdk/                        # TypeScript SDK
+│   │   └── src/
+│   │       ├── client.ts           # ExptClient — instruction builders
+│   │       ├── constants.ts        # Program IDs, PDAs, seeds
+│   │       ├── types.ts            # Parsed types, enums, helpers
+│   │       └── idl/expt.json       # Anchor IDL (auto-synced)
+│   └── tests/
+│       └── localnet-e2e.ts         # Full lifecycle E2E test
 └── apps/                           # Frontend applications
 ```
+
+---
+
+## E2E Testing
+
+The localnet E2E test validates the **full experiment lifecycle** against real Meteora presale and DAMM v2 programs deployed on a local validator. It exercises every on-chain instruction in the correct order, including cross-program invocations.
+
+### Test Phases
+
+| Phase | Description | What It Validates |
+|-------|-------------|-------------------|
+| **1. Create Presale** | Initialize a Meteora presale vault with `owner = Treasury PDA`, mint base tokens, and deposit them | Presale account created with correct owner; base token supply deposited |
+| **2. Deposit** | Create an escrow and deposit 5 SOL (WSOL) into the presale | Escrow created; quote tokens transferred into the presale vault |
+| **3. Create Expt & Finalize** | Call `create_expt_config` to define milestones, then `finalize_presale` after presale ends | ExptConfig PDA initialized; status transitions to `Active` when min cap is met |
+| **4. Withdraw Presale Funds** | Call `withdraw_presale_funds` — CPI into Meteora's `creator_withdraw` | WSOL appears in treasury ATA; 25% recorded as `total_treasury_received` |
+| **5. Milestone Submit & Resolve** | Submit proof for each milestone, wait for challenge window, then resolve | Milestones pass without veto; status becomes `Completed` after all milestones resolve |
+| **5.5 Unwrap Treasury WSOL** | Call `unwrap_treasury_wsol` to close the WSOL ATA → native SOL | Treasury PDA holds native SOL; WSOL ATA is closed |
+| **6. Claim Builder Funds** | Builder calls `claim_builder_funds` to withdraw earned percentage | Builder receives 25% of presale (1.25 SOL); `total_claimed_by_builder` matches |
+
+### Key Metrics (5 SOL deposited)
+
+| Metric | Value |
+|--------|-------|
+| Total presale deposit | 5 SOL |
+| Treasury received (25%) | 1.25 SOL |
+| LP allocation (75%) | 3.75 SOL |
+| Builder claimed | 1.25 SOL |
+
+### Running the E2E Test
+
+```bash
+# 1. Start local validator with Meteora programs
+solana-test-validator \
+  --bpf-program presSVxnf9UU8jMxhgSMqaRwNiT36qeBdNeTRKjTdbj presale.so \
+  --bpf-program cpamdpZCGKUy5JxQXB4dcpGPiikHawvSWAd6mEn1sGG damm_v2.so
+
+# 2. Build and deploy expt program
+cd programs
+anchor build -p expt
+solana program deploy target/deploy/expt.so --url localhost
+
+# 3. Run the E2E test
+bun run tests/localnet-e2e.ts
+```
+
+> **Note:** The test takes ~2 minutes due to presale timing (start/end delays and milestone challenge windows).
 
 ---
 

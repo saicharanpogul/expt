@@ -66,6 +66,9 @@ pub struct WithdrawPresaleFundsCtx<'info> {
     #[account(address = MEMO_PROGRAM_ID)]
     pub memo_program: UncheckedAccount<'info>,
 
+    /// CHECK: Event authority PDA for #[event_cpi] (derived from __event_authority seed)
+    pub presale_event_authority: UncheckedAccount<'info>,
+
     /// CHECK: Meteora Presale program
     #[account(address = PRESALE_PROGRAM_ID)]
     pub presale_program: UncheckedAccount<'info>,
@@ -119,6 +122,9 @@ pub fn handle_withdraw_presale_funds(ctx: Context<WithdrawPresaleFundsCtx>) -> R
         // Remaining accounts (CreatorWithdrawQuoteCtx)
         ctx.accounts.quote_token_vault.to_account_info(),  // 6: quote_token_vault
         ctx.accounts.quote_mint.to_account_info(),         // 7: quote_mint
+        // #[event_cpi] accounts (needed for invoke_signed to find them)
+        ctx.accounts.presale_event_authority.to_account_info(), // 8: event_authority
+        ctx.accounts.presale_program.to_account_info(),    // 9: presale program
     ];
 
     cpi_creator_withdraw(&cpi_accounts, &[treasury_seeds])?;

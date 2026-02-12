@@ -10,10 +10,10 @@ use anchor_lang::solana_program::{instruction::Instruction, program::invoke_sign
 pub const PRESALE_PROGRAM_ID: Pubkey =
     anchor_lang::solana_program::pubkey!("presSVxnf9UU8jMxhgSMqaRwNiT36qeBdNeTRKjTdbj");
 
-/// Presale authority (const PDA derived in the presale program)
+/// Presale authority (const PDA derived from seeds ["presale_authority"] + presale program ID)
 /// This is the PDA that controls the token vaults.
 pub const PRESALE_AUTHORITY: Pubkey =
-    anchor_lang::solana_program::pubkey!("AUh8bm2XsMfex3KjYGcM3G4uBqUNSDw6HEhWaWMYnyPH");
+    anchor_lang::solana_program::pubkey!("4Xgt6XKZiowAGNdPWngVAwpYbSwAmbBnRBPtCFXhrypc");
 
 /// SPL Memo program ID (required by presale's creator_withdraw)
 pub const MEMO_PROGRAM_ID: Pubkey =
@@ -213,9 +213,11 @@ pub struct RemainingAccountsInfo {
 ///   3. owner (signer) — must match presale.owner
 ///   4. token_program
 ///   5. memo_program
+///   6. event_authority (PDA from __event_authority seed) — #[event_cpi]
+///   7. presale_program — #[event_cpi]
 /// Remaining accounts:
-///   6. quote_token_vault (writable)
-///   7. quote_mint
+///   8. quote_token_vault (writable)
+///   9. quote_mint
 pub fn cpi_creator_withdraw<'info>(
     accounts: &[AccountInfo<'info>],
     signer_seeds: &[&[&[u8]]],
@@ -223,15 +225,21 @@ pub fn cpi_creator_withdraw<'info>(
     let mut data = Vec::with_capacity(64);
     data.extend_from_slice(&IX_CREATOR_WITHDRAW);
 
-    // RemainingAccountsInfo: one slice for TransferHookQuote (type 4, length 0)
+    // RemainingAccountsInfo: one slice for TransferHookQuote (type 1, length 0)
     // No transfer hook accounts needed for native SOL/WSOL
     let remaining_info = RemainingAccountsInfo {
         slices: vec![RemainingAccountsSlice {
-            accounts_type: 4, // TransferHookQuote
+            accounts_type: 1, // TransferHookQuote (0=TransferHookBase, 1=TransferHookQuote)
             length: 0,        // no extra transfer hook accounts
         }],
     };
     remaining_info.serialize(&mut data)?;
+
+    // Derive event_authority PDA for #[event_cpi]
+    let (event_authority, _) = Pubkey::find_program_address(
+        &[b"__event_authority"],
+        &PRESALE_PROGRAM_ID,
+    );
 
     let account_metas = vec![
         AccountMeta::new(accounts[0].key(), false),            // presale (writable)
@@ -240,6 +248,9 @@ pub fn cpi_creator_withdraw<'info>(
         AccountMeta::new_readonly(accounts[3].key(), true),    // owner (signer)
         AccountMeta::new_readonly(accounts[4].key(), false),   // token_program
         AccountMeta::new_readonly(accounts[5].key(), false),   // memo_program
+        // #[event_cpi] accounts
+        AccountMeta::new_readonly(event_authority, false),      // event_authority PDA
+        AccountMeta::new_readonly(PRESALE_PROGRAM_ID, false),   // presale program
         // Remaining accounts for CreatorWithdrawQuoteCtx
         AccountMeta::new(accounts[6].key(), false),            // quote_token_vault (writable)
         AccountMeta::new_readonly(accounts[7].key(), false),   // quote_mint
