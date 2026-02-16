@@ -18,10 +18,14 @@ pub struct SubmitMilestoneCtx<'info> {
     /// Builder submitting proof
     pub builder: Signer<'info>,
 
+    /// Mint used in PDA derivation
+    /// CHECK: Only used for PDA seed derivation, not read or written
+    pub mint: UncheckedAccount<'info>,
+
     /// ExptConfig PDA
     #[account(
         mut,
-        seeds = [seeds::EXPT_CONFIG_PREFIX, builder.key().as_ref()],
+        seeds = [seeds::EXPT_CONFIG_PREFIX, builder.key().as_ref(), mint.key().as_ref()],
         bump,
         constraint = expt_config.load()?.builder == builder.key() @ ExptError::Unauthorized,
     )]

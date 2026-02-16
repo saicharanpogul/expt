@@ -91,7 +91,7 @@ impl anchor_lang::Space for Milestone {
 }
 
 /// Main experiment configuration account.
-/// PDA seeds: [b"expt_config", builder.key()]
+/// PDA seeds: [b"expt_config", builder.key(), mint.key()]
 #[account(zero_copy)]
 #[derive(Debug)]
 pub struct ExptConfig {
@@ -137,12 +137,14 @@ pub struct ExptConfig {
     pub position_nft_mint: Pubkey,
     /// LP position PDA
     pub lp_position: Pubkey,
+    /// Total token supply minted during experiment creation
+    pub total_supply: u64,
     /// Reserved for future use
-    pub padding: [u8; 32],
+    pub padding: [u8; 24],
 }
 
 // ExptConfig size:
-// 32 + 32 + 200 + 32 + 32 + 1 + 1 + 1 + 1 + 4 + 8 + 8 + 8 + 2 + 6 + 8 + (408*3) + 32 + 32 + 32 + 32 = 1728
+// 32 + 32 + 200 + 32 + 32 + 1 + 1 + 1 + 1 + 1 + 3 + 8 + 8 + 8 + 2 + 6 + 8 + (408*3) + 32 + 32 + 32 + 8 + 24 = 1728
 const _: () = assert!(std::mem::size_of::<ExptConfig>() == 1728);
 
 impl ExptConfig {

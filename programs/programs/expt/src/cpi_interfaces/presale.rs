@@ -265,3 +265,125 @@ pub fn cpi_creator_withdraw<'info>(
     invoke_signed(&ix, accounts, signer_seeds)?;
     Ok(())
 }
+
+// ----- Initialize Presale CPI -----
+
+/// Instruction discriminator for `initialize_presale`
+const IX_INITIALIZE_PRESALE: [u8; 8] = compute_presale_discriminator("global:initialize_presale");
+
+/// Arguments for the Meteora presale initialization CPI
+#[derive(AnchorSerialize, AnchorDeserialize, Clone)]
+pub struct InitPresaleCpiArgs {
+    pub presale_maximum_cap: u64,
+    pub presale_minimum_cap: u64,
+    pub presale_start_time: u64,
+    pub presale_end_time: u64,
+    /// Amount of experiment tokens to deposit into the presale vault
+    pub presale_supply: u64,
+    /// Minimum deposit per buyer (in quote token lamports)
+    pub buyer_min_deposit_cap: u64,
+    /// Maximum deposit per buyer (in quote token lamports)
+    pub buyer_max_deposit_cap: u64,
+}
+
+/// CPI: initialize_presale
+///
+/// Initializes a Meteora presale with the treasury PDA as both
+/// token source (payerPresaleToken) and presale owner (creator).
+///
+/// Accounts (ordered as in Meteora's InitializePresaleCtx):
+///   0.  presale_mint (base token mint)
+///   1.  presale (writable) — PDA to be initialized
+///   2.  presale_authority
+///   3.  quote_token_mint
+///   4.  presale_vault (writable) — base token vault
+///   5.  quote_token_vault (writable) — quote token vault
+///   6.  payer_presale_token (writable) — source of base tokens (treasury ATA)
+///   7.  creator — presale owner (treasury PDA, not signer for Meteora)
+///   8.  base (signer) — random keypair for PDA derivation
+///   9.  payer (signer, writable) — pays for account creation
+///   10. base_token_program
+///   11. quote_token_program
+///   12. system_program
+///   13. event_authority (derived PDA)
+///   14. presale_program
+pub fn cpi_initialize_presale<'info>(
+    accounts: &[AccountInfo<'info>],
+    signer_seeds: &[&[&[u8]]],
+    args: &InitPresaleCpiArgs,
+) -> Result<()> {
+    let mut data = Vec::with_capacity(256);
+    data.extend_from_slice(&IX_INITIALIZE_PRESALE);
+
+    // PresaleArgs (66 bytes): max_cap(8) + min_cap(8) + start(8) + end(8) +
+    //   whitelist_mode(1) + presale_mode(1) + unsold_token_action(1) + disable_earlier(1) + padding(30)
+    data.extend_from_slice(&args.presale_maximum_cap.to_le_bytes());
+    data.extend_from_slice(&args.presale_minimum_cap.to_le_bytes());
+    data.extend_from_slice(&args.presale_start_time.to_le_bytes());
+    data.extend_from_slice(&args.presale_end_time.to_le_bytes());
+    data.push(0); // whitelist_mode = Permissionless
+    data.push(1); // presale_mode = Prorata
+    data.push(0); // unsold_token_action = Refund
+    data.push(0); // disable_earlier = false
+    data.extend_from_slice(&[0u8; 30]); // padding
+
+    // LockedVestingArgs (50 bytes): all zeros = None
+    data.extend_from_slice(&[0u8; 50]);
+
+    // padding[32] = all zeros
+    data.extend_from_slice(&[0u8; 32]);
+
+    // Vec<PresaleRegistryArgs>: 1 registry
+    data.extend_from_slice(&1u32.to_le_bytes()); // vec length = 1
+
+    // PresaleRegistryArgs (58 bytes):
+    //   min_dep_cap(8) + max_dep_cap(8) + presale_supply(8) + deposit_fee_bps(2) + padding(32)
+    data.extend_from_slice(&args.buyer_min_deposit_cap.to_le_bytes());
+    data.extend_from_slice(&args.buyer_max_deposit_cap.to_le_bytes());
+    data.extend_from_slice(&args.presale_supply.to_le_bytes());
+    data.extend_from_slice(&0u16.to_le_bytes()); // deposit_fee_bps = 0
+    data.extend_from_slice(&[0u8; 32]); // padding
+
+    // RemainingAccountsInfo: Vec<{accounts_type: enum(u32), length: u8}>
+    let remaining_info = RemainingAccountsInfo {
+        slices: vec![RemainingAccountsSlice {
+            accounts_type: 0, // TransferHookBase
+            length: 0,        // no extra accounts
+        }],
+    };
+    remaining_info.serialize(&mut data)?;
+
+    // Derive event_authority PDA
+    let (event_authority, _) = Pubkey::find_program_address(
+        &[b"__event_authority"],
+        &PRESALE_PROGRAM_ID,
+    );
+
+    let account_metas = vec![
+        AccountMeta::new_readonly(accounts[0].key(), false),   // presale_mint
+        AccountMeta::new(accounts[1].key(), false),            // presale (writable)
+        AccountMeta::new_readonly(accounts[2].key(), false),   // presale_authority
+        AccountMeta::new_readonly(accounts[3].key(), false),   // quote_token_mint
+        AccountMeta::new(accounts[4].key(), false),            // presale_vault (writable)
+        AccountMeta::new(accounts[5].key(), false),            // quote_token_vault (writable)
+        AccountMeta::new(accounts[6].key(), false),            // payer_presale_token (writable)
+        AccountMeta::new_readonly(accounts[7].key(), false),   // creator (treasury PDA, not signer)
+        AccountMeta::new_readonly(accounts[8].key(), true),    // base (signer)
+        AccountMeta::new(accounts[9].key(), true),             // payer (signer, writable) — treasury PDA via invoke_signed
+        AccountMeta::new_readonly(accounts[10].key(), false),  // base_token_program
+        AccountMeta::new_readonly(accounts[11].key(), false),  // quote_token_program
+        AccountMeta::new_readonly(accounts[12].key(), false),  // system_program
+        // #[event_cpi] accounts
+        AccountMeta::new_readonly(event_authority, false),
+        AccountMeta::new_readonly(PRESALE_PROGRAM_ID, false),
+    ];
+
+    let ix = Instruction {
+        program_id: PRESALE_PROGRAM_ID,
+        accounts: account_metas,
+        data,
+    };
+
+    invoke_signed(&ix, accounts, signer_seeds)?;
+    Ok(())
+}

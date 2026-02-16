@@ -49,3 +49,22 @@ export const PRESALE_AUTHORITY = new PublicKey(
 export const MEMO_PROGRAM_ID = new PublicKey(
   "MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr"
 );
+
+export const NATIVE_MINT = new PublicKey(
+  "So11111111111111111111111111111111111111112"
+);
+
+// ---------------------------------------------------------------------------
+// DAMM v2 Constants
+// ---------------------------------------------------------------------------
+
+export const DAMM_POOL_AUTHORITY = new PublicKey(
+  "HLnpSz9h2S4hiLQ43rnSD9XkcUThA7B8hQMKmDaiTLcC"
+);
+
+export const DAMM_SEEDS = {
+  CUSTOMIZABLE_POOL: Buffer.from("cpool"),
+  POSITION: Buffer.from("position"),
+  POSITION_NFT_ACCOUNT: Buffer.from("position_nft_account"),
+  TOKEN_VAULT: Buffer.from("token_vault"),
+} as const;

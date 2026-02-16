@@ -30,6 +30,10 @@ cargo update -p indexmap --precise 2.11.4
 
 This will be unnecessary once Solana ships platform-tools with rustc ≥ 1.85.
 
+## Experiment Lifecycle
+
+![Experiment Lifecycle](./assets/experiment_lifecycle.png)
+
 ## Build
 
 ```bash

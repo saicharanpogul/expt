@@ -4,6 +4,8 @@ import {
   SystemProgram,
   TransactionInstruction,
 } from "@solana/web3.js";
+import { TOKEN_PROGRAM_ID, ASSOCIATED_TOKEN_PROGRAM_ID } from "@solana/spl-token";
+import { createHash } from "crypto";
 
 import { IDL, type Expt } from "./idl";
 import {
@@ -16,17 +18,23 @@ import {
   deriveExptConfigPda,
   deriveTreasuryPda,
   deriveVetoStakePda,
+  deriveEscrowPda,
+  deriveQuoteVault,
 } from "./pda";
 import {
   type CreateExptConfigInput,
+  type InitializePresaleFromTreasuryInput,
   type SubmitMilestoneInput,
   type ParsedExptConfig,
+  type ParsedPresaleState,
   type ParsedVetoStake,
   type RawExptConfig,
   type RawVetoStake,
   buildCreateExptConfigArgs,
+  buildInitializePresaleFromTreasuryArgs,
   buildSubmitMilestoneArgs,
   parseExptConfig,
+  parsePresaleState,
   parseVetoStake,
 } from "./types";
 
@@ -47,8 +55,8 @@ export class ExptClient {
   // PDA helpers (convenience pass-through)
   // -----------------------------------------------------------------------
 
-  deriveExptConfigPda(builder: PublicKey): [PublicKey, number] {
-    return deriveExptConfigPda(builder, this.programId);
+  deriveExptConfigPda(builder: PublicKey, mint: PublicKey): [PublicKey, number] {
+    return deriveExptConfigPda(builder, mint, this.programId);
   }
 
   deriveTreasuryPda(exptConfig: PublicKey): [PublicKey, number] {
@@ -68,10 +76,10 @@ export class ExptClient {
   // -----------------------------------------------------------------------
 
   /**
-   * Fetch and parse an ExptConfig by builder wallet.
+   * Fetch and parse an ExptConfig by builder wallet and mint.
    */
-  async fetchExptConfig(builder: PublicKey): Promise<ParsedExptConfig | null> {
-    const [pda] = this.deriveExptConfigPda(builder);
+  async fetchExptConfig(builder: PublicKey, mint: PublicKey): Promise<ParsedExptConfig | null> {
+    const [pda] = this.deriveExptConfigPda(builder, mint);
     return this.fetchExptConfigByAddress(pda);
   }
 
@@ -120,16 +128,24 @@ export class ExptClient {
 
   /**
    * Create a new experiment.
+   * The mint is created on-chain by this instruction.
+   * Pass a fresh Keypair's publicKey as `mint` — add the Keypair as a signer.
+   * Total supply is minted to treasury's ATA, then mint authority is revoked.
    */
   async createExptConfig(
     builder: PublicKey,
-    presale: PublicKey,
     mint: PublicKey,
     input: CreateExptConfigInput
   ): Promise<TransactionInstruction> {
-    const [exptConfigPda] = this.deriveExptConfigPda(builder);
+    const [exptConfigPda] = this.deriveExptConfigPda(builder, mint);
     const [treasuryPda] = this.deriveTreasuryPda(exptConfigPda);
     const args = buildCreateExptConfigArgs(input);
+
+    // Derive treasury's ATA for the new mint
+    const [treasuryToken] = PublicKey.findProgramAddressSync(
+      [treasuryPda.toBuffer(), TOKEN_PROGRAM_ID.toBuffer(), mint.toBuffer()],
+      ASSOCIATED_TOKEN_PROGRAM_ID
+    );
 
     return await (this.program.methods as any)
       .createExptConfig(args)
@@ -137,8 +153,75 @@ export class ExptClient {
         builder,
         exptConfig: exptConfigPda,
         treasury: treasuryPda,
-        presale,
         mint,
+        treasuryToken,
+        tokenProgram: TOKEN_PROGRAM_ID,
+        associatedTokenProgram: ASSOCIATED_TOKEN_PROGRAM_ID,
+        systemProgram: SystemProgram.programId,
+      })
+      .instruction();
+  }
+
+  /**
+   * Initialize a Meteora presale using tokens from the treasury.
+   * Must be called after createExptConfig.
+   * Pass a fresh Keypair's publicKey as `base` — add the Keypair as a signer.
+   */
+  async initializePresaleFromTreasury(
+    builder: PublicKey,
+    mint: PublicKey,
+    base: PublicKey,
+    quoteMint: PublicKey,
+    input: InitializePresaleFromTreasuryInput
+  ): Promise<TransactionInstruction> {
+    const [exptConfigPda] = this.deriveExptConfigPda(builder, mint);
+    const [treasuryPda] = this.deriveTreasuryPda(exptConfigPda);
+    const args = buildInitializePresaleFromTreasuryArgs(input);
+
+    // Derive treasury's ATA for the experiment token
+    const [treasuryToken] = PublicKey.findProgramAddressSync(
+      [treasuryPda.toBuffer(), TOKEN_PROGRAM_ID.toBuffer(), mint.toBuffer()],
+      ASSOCIATED_TOKEN_PROGRAM_ID
+    );
+
+    // Derive Meteora presale PDAs
+    const [presalePda] = PublicKey.findProgramAddressSync(
+      [Buffer.from("presale"), base.toBuffer(), mint.toBuffer(), quoteMint.toBuffer()],
+      PRESALE_PROGRAM_ID
+    );
+    const [presaleVault] = PublicKey.findProgramAddressSync(
+      [Buffer.from("base_vault"), presalePda.toBuffer()],
+      PRESALE_PROGRAM_ID
+    );
+    const [quoteVault] = PublicKey.findProgramAddressSync(
+      [Buffer.from("quote_vault"), presalePda.toBuffer()],
+      PRESALE_PROGRAM_ID
+    );
+
+    // Derive event authority PDA for Meteora's #[event_cpi] pattern
+    const [eventAuthority] = PublicKey.findProgramAddressSync(
+      [Buffer.from("__event_authority")],
+      PRESALE_PROGRAM_ID
+    );
+
+    return await (this.program.methods as any)
+      .initializePresaleFromTreasury(args)
+      .accounts({
+        builder,
+        exptConfig: exptConfigPda,
+        treasury: treasuryPda,
+        treasuryToken,
+        base,
+        mint,
+        quoteMint,
+        presale: presalePda,
+        presaleAuthority: PRESALE_AUTHORITY,
+        presaleVault,
+        quoteVault,
+        baseTokenProgram: TOKEN_PROGRAM_ID,
+        quoteTokenProgram: TOKEN_PROGRAM_ID,
+        presaleProgram: PRESALE_PROGRAM_ID,
+        eventAuthority,
         systemProgram: SystemProgram.programId,
       })
       .instruction();
@@ -167,15 +250,17 @@ export class ExptClient {
    */
   async submitMilestone(
     builder: PublicKey,
+    mint: PublicKey,
     input: SubmitMilestoneInput
   ): Promise<TransactionInstruction> {
-    const [exptConfigPda] = this.deriveExptConfigPda(builder);
+    const [exptConfigPda] = this.deriveExptConfigPda(builder, mint);
     const args = buildSubmitMilestoneArgs(input);
 
     return await (this.program.methods as any)
       .submitMilestone(args)
       .accounts({
         builder,
+        mint,
         exptConfig: exptConfigPda,
       })
       .instruction();
@@ -230,15 +315,17 @@ export class ExptClient {
    * Builder claims earned funds from the treasury.
    */
   async claimBuilderFunds(
-    builder: PublicKey
+    builder: PublicKey,
+    mint: PublicKey
   ): Promise<TransactionInstruction> {
-    const [exptConfigPda] = this.deriveExptConfigPda(builder);
+    const [exptConfigPda] = this.deriveExptConfigPda(builder, mint);
     const [treasuryPda] = this.deriveTreasuryPda(exptConfigPda);
 
     return await (this.program.methods as any)
       .claimBuilderFunds()
       .accounts({
         builder,
+        mint,
         exptConfig: exptConfigPda,
         treasury: treasuryPda,
         systemProgram: SystemProgram.programId,
@@ -325,54 +412,32 @@ export class ExptClient {
    * Launch a DAMM v2 pool after presale succeeds.
    * Permissionless — anyone can trigger after finalize_presale.
    *
-   * Note: This requires many DAMM v2 accounts. The caller must derive/provide
-   * pool, position, vault, and config accounts from the DAMM v2 program.
+   * Note: Pool parameters (sqrtPrice, liquidity, price range) are computed
+   * on-chain from treasury balances. Only activation_point is needed from caller.
    */
   async launchPool(
     payer: PublicKey,
     exptConfig: PublicKey,
     args: {
-      tokenAAmount: BN;
-      tokenBAmount: BN;
-      activationPoint: BN;
-      feeSchedulerMode: number;
-      baseFeeNumerator: BN;
-      feeSchedulerParam0: BN;
-      feeSchedulerParam1: BN;
-      feeSchedulerParam2: BN;
-      hasAlphaVault: boolean;
-      dynamicFee: {
-        initialized: number;
-        baseFeeRateCliff: BN;
-        baseFeeRatePhaseTwo: BN;
-        numberOfPeriod: number;
-        periodFrequency: BN;
-        reductionFactor: BN;
-        feeSchedulerMode: number;
-        padding0: number[];
-        padding1: BN[];
-      };
+      activationPoint: BN | null;
     },
-    remainingAccounts: {
-      pool: PublicKey;
+    dammAccounts: {
+      positionNftMint: PublicKey;
+      dammPoolAuthority: PublicKey;
+      dammPool: PublicKey;
+      dammPosition: PublicKey;
+      positionNftAccount: PublicKey;
       tokenAMint: PublicKey;
       tokenBMint: PublicKey;
-      poolTokenAVault: PublicKey;
-      poolTokenBVault: PublicKey;
-      payerTokenA: PublicKey;
-      payerTokenB: PublicKey;
-      positionNftMint: PublicKey;
-      position: PublicKey;
-      poolAuthority: PublicKey;
-      ammConfig: PublicKey;
-      mintMetadata: PublicKey;
+      tokenAVault: PublicKey;
+      tokenBVault: PublicKey;
+      treasuryTokenA: PublicKey;
+      treasuryTokenB: PublicKey;
       tokenAProgram: PublicKey;
       tokenBProgram: PublicKey;
-      associatedTokenProgram: PublicKey;
-      tokenProgram: PublicKey;
-      metadataProgram: PublicKey;
-      rent: PublicKey;
-      dammProgram: PublicKey;
+      token2022Program: PublicKey;
+      dammV2Program: PublicKey;
+      eventAuthority: PublicKey;
     }
   ): Promise<TransactionInstruction> {
     const [treasuryPda] = this.deriveTreasuryPda(exptConfig);
@@ -383,7 +448,7 @@ export class ExptClient {
         payer,
         exptConfig,
         treasury: treasuryPda,
-        ...remainingAccounts,
+        ...dammAccounts,
         systemProgram: SystemProgram.programId,
       })
       .instruction();
@@ -425,4 +490,187 @@ export class ExptClient {
       })
       .instruction();
   }
+
+  // -------------------------------------------------------------------------
+  // Meteora Presale helpers
+  // -------------------------------------------------------------------------
+
+  /**
+   * Fetch and parse a Meteora Presale account by its PDA address.
+   */
+  async fetchPresaleState(
+    presale: PublicKey
+  ): Promise<ParsedPresaleState | null> {
+    const connection = this.program.provider.connection;
+    const info = await connection.getAccountInfo(presale);
+    if (!info) return null;
+    return parsePresaleState(info.data);
+  }
+
+  /**
+   * Build createPermissionlessEscrow instruction.
+   * Must be called once per depositor before their first deposit.
+   */
+  buildCreateEscrowIx(params: {
+    presale: PublicKey;
+    owner: PublicKey;
+    payer: PublicKey;
+    registryIndex?: number;
+  }): TransactionInstruction {
+    const disc = anchorDiscriminator("create_permissionless_escrow");
+
+    const [escrowPda] = deriveEscrowPda(
+      params.presale,
+      params.owner,
+      params.registryIndex ?? 0
+    );
+
+    const [eventAuthority] = PublicKey.findProgramAddressSync(
+      [Buffer.from("__event_authority")],
+      PRESALE_PROGRAM_ID
+    );
+
+    return new TransactionInstruction({
+      programId: PRESALE_PROGRAM_ID,
+      keys: [
+        { pubkey: params.presale, isSigner: false, isWritable: true },
+        { pubkey: escrowPda, isSigner: false, isWritable: true },
+        { pubkey: params.owner, isSigner: false, isWritable: false },
+        { pubkey: params.payer, isSigner: true, isWritable: true },
+        { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
+        // #[event_cpi]
+        { pubkey: eventAuthority, isSigner: false, isWritable: false },
+        { pubkey: PRESALE_PROGRAM_ID, isSigner: false, isWritable: false },
+      ],
+      data: disc,
+    });
+  }
+
+  /**
+   * Build deposit instruction for the Meteora presale.
+   */
+  buildDepositIx(params: {
+    presale: PublicKey;
+    quoteTokenVault: PublicKey;
+    quoteMint: PublicKey;
+    escrow: PublicKey;
+    payerQuoteToken: PublicKey;
+    payer: PublicKey;
+    tokenProgram: PublicKey;
+    maxAmount: BN;
+  }): TransactionInstruction {
+    const disc = anchorDiscriminator("deposit");
+
+    // max_amount: u64 (LE)
+    const amountBuf = Buffer.alloc(8);
+    amountBuf.writeBigUInt64LE(BigInt(params.maxAmount.toString()), 0);
+
+    // RemainingAccountsInfo — empty for SPL Token
+    const remainingInfo = serializeRemainingAccountsInfo([
+      { accountsType: 1, length: 0 }, // TransferHookQuote, 0 accounts
+    ]);
+
+    const data = Buffer.concat([disc, amountBuf, remainingInfo]);
+
+    const [eventAuthority] = PublicKey.findProgramAddressSync(
+      [Buffer.from("__event_authority")],
+      PRESALE_PROGRAM_ID
+    );
+
+    return new TransactionInstruction({
+      programId: PRESALE_PROGRAM_ID,
+      keys: [
+        { pubkey: params.presale, isSigner: false, isWritable: true },
+        { pubkey: params.quoteTokenVault, isSigner: false, isWritable: true },
+        { pubkey: params.quoteMint, isSigner: false, isWritable: false },
+        { pubkey: params.escrow, isSigner: false, isWritable: true },
+        { pubkey: params.payerQuoteToken, isSigner: false, isWritable: true },
+        { pubkey: params.payer, isSigner: true, isWritable: true },
+        { pubkey: params.tokenProgram, isSigner: false, isWritable: false },
+        // #[event_cpi]
+        { pubkey: eventAuthority, isSigner: false, isWritable: false },
+        { pubkey: PRESALE_PROGRAM_ID, isSigner: false, isWritable: false },
+      ],
+      data,
+    });
+  }
+
+  /**
+   * Build withdraw instruction for the Meteora presale.
+   * Allows a depositor to reclaim their SOL after a failed presale.
+   */
+  buildWithdrawIx(params: {
+    presale: PublicKey;
+    quoteTokenVault: PublicKey;
+    quoteMint: PublicKey;
+    escrow: PublicKey;
+    payerQuoteToken: PublicKey;
+    payer: PublicKey;
+    tokenProgram: PublicKey;
+    maxAmount: BN;
+  }): TransactionInstruction {
+    const disc = anchorDiscriminator("withdraw");
+
+    // max_amount: u64 (LE)
+    const amountBuf = Buffer.alloc(8);
+    amountBuf.writeBigUInt64LE(BigInt(params.maxAmount.toString()), 0);
+
+    // RemainingAccountsInfo — empty for SPL Token
+    const remainingInfo = serializeRemainingAccountsInfo([
+      { accountsType: 1, length: 0 }, // TransferHookQuote, 0 accounts
+    ]);
+
+    const data = Buffer.concat([disc, amountBuf, remainingInfo]);
+
+    const [eventAuthority] = PublicKey.findProgramAddressSync(
+      [Buffer.from("__event_authority")],
+      PRESALE_PROGRAM_ID
+    );
+
+    return new TransactionInstruction({
+      programId: PRESALE_PROGRAM_ID,
+      keys: [
+        { pubkey: params.presale, isSigner: false, isWritable: true },
+        { pubkey: params.quoteTokenVault, isSigner: false, isWritable: true },
+        { pubkey: params.quoteMint, isSigner: false, isWritable: false },
+        { pubkey: params.escrow, isSigner: false, isWritable: true },
+        { pubkey: params.payerQuoteToken, isSigner: false, isWritable: true },
+        { pubkey: params.payer, isSigner: true, isWritable: true },
+        { pubkey: params.tokenProgram, isSigner: false, isWritable: false },
+        // #[event_cpi]
+        { pubkey: eventAuthority, isSigner: false, isWritable: false },
+        { pubkey: PRESALE_PROGRAM_ID, isSigner: false, isWritable: false },
+      ],
+      data,
+    });
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Internal helpers
+// ---------------------------------------------------------------------------
+
+/** Compute the 8-byte Anchor instruction discriminator. */
+function anchorDiscriminator(ixName: string): Buffer {
+  const hash = createHash("sha256").update(`global:${ixName}`).digest();
+  return hash.subarray(0, 8);
+}
+
+/**
+ * Borsh-serialize RemainingAccountsInfo.
+ * Format: Vec<{accounts_type: enum(u32), length: u8}>
+ */
+function serializeRemainingAccountsInfo(
+  slices: Array<{ accountsType: number; length: number }>
+): Buffer {
+  const buf = Buffer.alloc(4 + slices.length * 5);
+  buf.writeUInt32LE(slices.length, 0);
+  let offset = 4;
+  for (const s of slices) {
+    buf.writeUInt32LE(s.accountsType, offset);
+    offset += 4;
+    buf.writeUInt8(s.length, offset);
+    offset += 1;
+  }
+  return buf;
 }

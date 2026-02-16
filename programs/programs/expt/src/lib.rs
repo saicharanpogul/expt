@@ -3,6 +3,7 @@ use anchor_lang::prelude::*;
 pub mod constants;
 pub mod errors;
 pub mod events;
+pub mod math;
 
 mod state;
 pub use state::*;
@@ -83,5 +84,15 @@ pub mod expt {
     /// Must be called after withdraw_presale_funds and before claim_builder_funds.
     pub fn unwrap_treasury_wsol(ctx: Context<UnwrapTreasuryWsolCtx>) -> Result<()> {
         instructions::handle_unwrap_treasury_wsol(ctx)
+    }
+
+    /// Initialize a Meteora presale using tokens from the treasury.
+    /// Only the builder can call this after create_expt_config.
+    /// Tokens are transferred from treasury ATA → presale vault via CPI.
+    pub fn initialize_presale_from_treasury(
+        ctx: Context<InitPresaleFromTreasuryCtx>,
+        args: InitPresaleFromTreasuryArgs,
+    ) -> Result<()> {
+        instructions::handle_initialize_presale_from_treasury(ctx, args)
     }
 }

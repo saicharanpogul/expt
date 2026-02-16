@@ -136,28 +136,37 @@ export default function HomePage() {
           <div className="flex-1 text-center md:text-left">
             <p className="text-xs font-medium text-[#57534E] uppercase tracking-widest mb-4">Step 2</p>
             <h3 className="text-2xl md:text-[32px] font-semibold tracking-tight leading-[1.2] text-[#1C1917]">
-              Share with your
+              Speculation already
               <br />
-              community and raise
+              exists. Redirect it.
             </h3>
           </div>
           <div className="flex-1 max-w-md">
             <div className="bg-white rounded-2xl p-5 shadow-[0_1px_3px_rgba(0,0,0,0.04)]">
-              <div className="flex items-center justify-between bg-[#FAFAF9] rounded-xl px-4 py-3">
-                <p className="text-xs text-[#57534E] font-mono truncate">expt.fun/experiment/7xKX...F3mp</p>
-                <span className="inline-flex items-center rounded-full bg-[#140E1C] text-[#F4F3EE] px-3.5 py-1.5 text-xs font-medium ml-2 shrink-0">
-                  Copy
-                </span>
-              </div>
-              <div className="mt-4 bg-[#FAFAF9] rounded-xl px-4 py-5">
-                <div className="flex items-center justify-between mb-3">
-                  <span className="text-xs text-[#57534E]">Raised</span>
-                  <span className="text-sm font-semibold text-[#140E1C]">7.2 / 10 SOL</span>
+              <p className="text-sm font-semibold text-[#1C1917] mb-1">Expt channels resources into liquidity & learning</p>
+              <p className="text-xs text-[#57534E] mb-4">People launch tokens to extract.</p>
+              <div className="space-y-2">
+                {[
+                  { label: "Farm Grants & Bounties", icon: "✕", color: "text-[#A1A1AA]", bg: "bg-[#E7E5E4]" },
+                  { label: "Anon Token Launches", icon: "✕", color: "text-[#A1A1AA]", bg: "bg-[#E7E5E4]" },
+                ].map((item) => (
+                  <div key={item.label} className="flex items-center justify-between bg-[#FAFAF9] rounded-xl px-4 py-3">
+                    <div className="flex items-center gap-3">
+                      <span className={`h-7 w-7 rounded-lg ${item.bg} flex items-center justify-center text-xs ${item.color} font-medium`}>
+                        {item.icon}
+                      </span>
+                      <span className="text-sm text-[#A1A1AA] line-through">{item.label}</span>
+                    </div>
+                  </div>
+                ))}
+                <div className="flex items-center justify-between bg-[#140E1C] rounded-xl px-4 py-3">
+                  <div className="flex items-center gap-3">
+                    <span className="h-7 w-7 rounded-lg bg-[#F4F3EE]/15 flex items-center justify-center text-xs text-[#F4F3EE] font-medium">
+                      ✓
+                    </span>
+                    <span className="text-sm font-semibold text-[#F4F3EE]">A market for uncertainty</span>
+                  </div>
                 </div>
-                <div className="h-2 bg-[#E7E5E4] rounded-full overflow-hidden">
-                  <div className="h-full bg-[#140E1C] rounded-full" style={{ width: "72%" }} />
-                </div>
-                <p className="text-[10px] text-[#A1A1AA] mt-2">23 supporters · 4 days left</p>
               </div>
             </div>
           </div>

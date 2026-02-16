@@ -92,4 +92,10 @@ pub enum ExptError {
 
     #[msg("Presale funds have not been withdrawn yet")]
     PresaleFundsNotWithdrawn,
+
+    #[msg("Presale has already been initialized for this experiment")]
+    PresaleAlreadyInitialized,
+
+    #[msg("Insufficient token balance in treasury")]
+    InsufficientTreasuryBalance,
 }

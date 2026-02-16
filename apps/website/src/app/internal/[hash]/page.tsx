@@ -6,67 +6,28 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import Link from "next/link";
 import { Lock, BarChart3, Users, Coins, Activity, ExternalLink } from "lucide-react";
+import { useExptClient } from "@/hooks/use-expt-client";
+import {
+  type ParsedExptConfig,
+  ExptStatus,
+  exptStatusLabel,
+} from "@expt/sdk";
+import { LAMPORTS_PER_SOL } from "@solana/web3.js";
 
-// Mock data (will be replaced with SDK reads)
-const ADMIN_EXPERIMENTS = [
-  {
-    address: "7xKXAbC123def456ghi789Jkl012mnO",
-    name: "Solana Pay Plugin",
-    builder: "7xKX...F3mp",
-    status: "Active",
-    treasuryBalance: 1.3,
-    milestones: "1/3",
-    vetoStakes: 0,
-    created: "2026-02-10",
-  },
-  {
-    address: "8yLYBcD234efg567hij890Klm123noP",
-    name: "NFT Staking Kit",
-    builder: "8yLY...G4nq",
-    status: "Presale",
-    treasuryBalance: 0,
-    milestones: "0/2",
-    vetoStakes: 0,
-    created: "2026-02-11",
-  },
-  {
-    address: "9zMZCdE345fgh678ijk901Lmn234opQ",
-    name: "DAO Voting Tool",
-    builder: "9zMZ...H5or",
-    status: "Active",
-    treasuryBalance: 2.7,
-    milestones: "2/3",
-    vetoStakes: 1,
-    created: "2026-02-09",
-  },
-  {
-    address: "1aNA DeF456ghi789jkl012Mno345pqR",
-    name: "Token Launcher",
-    builder: "1aNA...I6ps",
-    status: "Completed",
-    treasuryBalance: 0,
-    milestones: "3/3",
-    vetoStakes: 0,
-    created: "2026-02-05",
-  },
-  {
-    address: "2bOBEfG567hij890klm123Nop456qrS",
-    name: "Yield Aggregator",
-    builder: "2bOB...J7qt",
-    status: "Failed",
-    treasuryBalance: 0,
-    milestones: "0/3",
-    vetoStakes: 3,
-    created: "2026-02-07",
-  },
-];
-
-const STATUS_COLORS: Record<string, string> = {
-  Active: "bg-expt-success/10 text-expt-success border-expt-success/20",
-  Presale: "bg-expt-warning/10 text-expt-warning border-expt-warning/20",
-  Completed: "bg-expt-info/10 text-expt-info border-expt-info/20",
-  Failed: "bg-expt-danger/10 text-expt-danger border-expt-danger/20",
+const STATUS_COLORS: Record<number, string> = {
+  [ExptStatus.Created]: "bg-[#6A6D78]/10 text-[#6A6D78] border-[#6A6D78]/20",
+  [ExptStatus.PresaleActive]:
+    "bg-[#E09F3E]/10 text-[#E09F3E] border-[#E09F3E]/20",
+  [ExptStatus.PresaleFailed]:
+    "bg-[#D32F2F]/10 text-[#D32F2F] border-[#D32F2F]/20",
+  [ExptStatus.Active]: "bg-[#140E1C]/10 text-[#140E1C] border-[#140E1C]/20",
+  [ExptStatus.Completed]:
+    "bg-[#6A6D78]/10 text-[#6A6D78] border-[#6A6D78]/20",
 };
+
+function truncateAddress(address: string): string {
+  return `${address.slice(0, 4)}...${address.slice(-4)}`;
+}
 
 export default function AdminDashboardPage({
   params,
@@ -77,6 +38,10 @@ export default function AdminDashboardPage({
   const [passcode, setPasscode] = useState("");
   const [error, setError] = useState("");
   const [hash, setHash] = useState<string>("");
+  const [experiments, setExperiments] = useState<ParsedExptConfig[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  const client = useExptClient();
 
   useEffect(() => {
     params.then((p) => setHash(p.hash));
@@ -89,6 +54,29 @@ export default function AdminDashboardPage({
       setAuthenticated(true);
     }
   }, []);
+
+  // Fetch experiments once authenticated
+  useEffect(() => {
+    if (!authenticated) return;
+    let cancelled = false;
+
+    async function fetchAll() {
+      try {
+        setLoading(true);
+        const configs = await client.fetchAllExptConfigs();
+        if (!cancelled) setExperiments(configs);
+      } catch (err) {
+        console.error("Failed to fetch experiments:", err);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    }
+
+    fetchAll();
+    return () => {
+      cancelled = true;
+    };
+  }, [authenticated, client]);
 
   const handleAuth = () => {
     const adminPasscode = process.env.NEXT_PUBLIC_ADMIN_PASSCODE || "expt-admin-2026";
@@ -105,9 +93,9 @@ export default function AdminDashboardPage({
     return (
       <div className="max-w-[1200px] mx-auto px-6 py-16 text-center">
         <div className="max-w-sm mx-auto">
-          <Lock className="h-12 w-12 mx-auto mb-4 text-text-secondary" />
-          <h2 className="text-lg font-medium mb-2">Admin Access</h2>
-          <p className="text-sm text-text-secondary mb-6">
+          <Lock className="h-12 w-12 mx-auto mb-4 text-[#6A6D78]" />
+          <h2 className="text-lg font-medium mb-2 text-[#1C1917]">Admin Access</h2>
+          <p className="text-sm text-[#6A6D78] mb-6">
             Enter the admin passcode to access the dashboard.
           </p>
           <form
@@ -121,12 +109,15 @@ export default function AdminDashboardPage({
               value={passcode}
               onChange={(e) => setPasscode(e.target.value)}
               placeholder="Passcode"
-              className="rounded-lg mb-3"
+              className="rounded-lg mb-3 border-[#DEDEE3]"
             />
             {error && (
-              <p className="text-xs text-expt-danger mb-3">{error}</p>
+              <p className="text-xs text-[#D32F2F] mb-3">{error}</p>
             )}
-            <Button type="submit" className="w-full rounded-lg text-xs">
+            <Button
+              type="submit"
+              className="w-full rounded-lg text-xs bg-[#140E1C] hover:bg-[#2A2430] text-[#F4F3EE]"
+            >
               Access Dashboard
             </Button>
           </form>
@@ -135,146 +126,168 @@ export default function AdminDashboardPage({
     );
   }
 
-  const stats = {
-    total: ADMIN_EXPERIMENTS.length,
-    active: ADMIN_EXPERIMENTS.filter((e) => e.status === "Active").length,
-    totalRaised: ADMIN_EXPERIMENTS.reduce(
-      (sum, e) => sum + e.treasuryBalance,
-      0
-    ).toFixed(1),
-    totalVetoStakes: ADMIN_EXPERIMENTS.reduce(
-      (sum, e) => sum + e.vetoStakes,
-      0
-    ),
-  };
+  const activeCount = experiments.filter(
+    (e) => e.status === ExptStatus.Active
+  ).length;
+  const totalSOL = experiments.reduce(
+    (sum, e) => sum + Number(e.totalTreasuryReceived) / LAMPORTS_PER_SOL,
+    0
+  );
+  const presaleCount = experiments.filter(
+    (e) =>
+      e.status === ExptStatus.Created ||
+      e.status === ExptStatus.PresaleActive
+  ).length;
 
   return (
     <div className="max-w-[1200px] mx-auto px-6 py-8">
       <div className="flex items-center justify-between mb-8">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight">
+          <h1 className="text-2xl font-semibold tracking-tight text-[#1C1917]">
             Admin Dashboard
           </h1>
-          <p className="text-sm text-text-secondary mt-1">
-            Internal tool — all on-chain state
+          <p className="text-sm text-[#6A6D78] mt-1">
+            Live on-chain state
           </p>
         </div>
-        <Badge variant="outline" className="text-xs">
+        <Badge
+          variant="outline"
+          className="text-xs border-[#DEDEE3] text-[#6A6D78]"
+        >
           Admin
         </Badge>
       </div>
 
       {/* Stats */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
-        <div className="bg-surface-muted rounded-2xl p-5">
-          <div className="flex items-center gap-2 text-text-secondary mb-2">
+        <div className="bg-white rounded-2xl p-5 border border-[#DEDEE3]">
+          <div className="flex items-center gap-2 text-[#6A6D78] mb-2">
             <BarChart3 className="h-4 w-4" />
             <span className="text-xs font-medium">Total</span>
           </div>
-          <p className="text-2xl font-semibold">{stats.total}</p>
+          <p className="text-2xl font-semibold text-[#1C1917]">
+            {loading ? "..." : experiments.length}
+          </p>
         </div>
-        <div className="bg-surface-muted rounded-2xl p-5">
-          <div className="flex items-center gap-2 text-text-secondary mb-2">
+        <div className="bg-white rounded-2xl p-5 border border-[#DEDEE3]">
+          <div className="flex items-center gap-2 text-[#6A6D78] mb-2">
             <Activity className="h-4 w-4" />
             <span className="text-xs font-medium">Active</span>
           </div>
-          <p className="text-2xl font-semibold">{stats.active}</p>
+          <p className="text-2xl font-semibold text-[#1C1917]">
+            {loading ? "..." : activeCount}
+          </p>
         </div>
-        <div className="bg-surface-muted rounded-2xl p-5">
-          <div className="flex items-center gap-2 text-text-secondary mb-2">
+        <div className="bg-white rounded-2xl p-5 border border-[#DEDEE3]">
+          <div className="flex items-center gap-2 text-[#6A6D78] mb-2">
             <Coins className="h-4 w-4" />
-            <span className="text-xs font-medium">Treasury</span>
+            <span className="text-xs font-medium">Total SOL</span>
           </div>
-          <p className="text-2xl font-semibold">{stats.totalRaised} SOL</p>
+          <p className="text-2xl font-semibold text-[#1C1917]">
+            {loading ? "..." : totalSOL.toFixed(2)}
+          </p>
         </div>
-        <div className="bg-surface-muted rounded-2xl p-5">
-          <div className="flex items-center gap-2 text-text-secondary mb-2">
+        <div className="bg-white rounded-2xl p-5 border border-[#DEDEE3]">
+          <div className="flex items-center gap-2 text-[#6A6D78] mb-2">
             <Users className="h-4 w-4" />
-            <span className="text-xs font-medium">Veto Stakes</span>
+            <span className="text-xs font-medium">In Presale</span>
           </div>
-          <p className="text-2xl font-semibold">{stats.totalVetoStakes}</p>
+          <p className="text-2xl font-semibold text-[#1C1917]">
+            {loading ? "..." : presaleCount}
+          </p>
         </div>
       </div>
 
       {/* Data Table */}
-      <div className="bg-card rounded-3xl border border-border overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full">
-            <thead>
-              <tr className="border-b border-border">
-                <th className="text-left text-xs font-medium text-text-secondary px-6 py-3">
-                  Name
-                </th>
-                <th className="text-left text-xs font-medium text-text-secondary px-6 py-3">
-                  Builder
-                </th>
-                <th className="text-left text-xs font-medium text-text-secondary px-6 py-3">
-                  Status
-                </th>
-                <th className="text-left text-xs font-medium text-text-secondary px-6 py-3">
-                  Treasury
-                </th>
-                <th className="text-left text-xs font-medium text-text-secondary px-6 py-3">
-                  Milestones
-                </th>
-                <th className="text-left text-xs font-medium text-text-secondary px-6 py-3">
-                  Created
-                </th>
-                <th className="text-left text-xs font-medium text-text-secondary px-6 py-3" />
-              </tr>
-            </thead>
-            <tbody>
-              {ADMIN_EXPERIMENTS.map((expt) => (
-                <tr
-                  key={expt.address}
-                  className="border-b border-border last:border-0 hover:bg-secondary/50 transition-colors"
-                >
-                  <td className="px-6 py-4">
-                    <span className="text-sm font-medium">{expt.name}</span>
-                  </td>
-                  <td className="px-6 py-4">
-                    <span className="text-xs text-text-secondary font-mono">
-                      {expt.builder}
-                    </span>
-                  </td>
-                  <td className="px-6 py-4">
-                    <Badge
-                      variant="outline"
-                      className={`text-[10px] px-1.5 py-0 h-4 font-normal ${
-                        STATUS_COLORS[expt.status] || ""
-                      }`}
-                    >
-                      {expt.status}
-                    </Badge>
-                  </td>
-                  <td className="px-6 py-4">
-                    <span className="text-sm">
-                      {expt.treasuryBalance} SOL
-                    </span>
-                  </td>
-                  <td className="px-6 py-4">
-                    <span className="text-xs text-text-secondary">
-                      {expt.milestones}
-                    </span>
-                  </td>
-                  <td className="px-6 py-4">
-                    <span className="text-xs text-text-secondary">
-                      {expt.created}
-                    </span>
-                  </td>
-                  <td className="px-6 py-4 text-right">
-                    <Link
-                      href={`/internal/${hash}/experiment/${expt.address}`}
-                      className="text-xs text-expt-info hover:underline inline-flex items-center gap-1"
-                    >
-                      View <ExternalLink className="h-3 w-3" />
-                    </Link>
-                  </td>
+      <div className="bg-white rounded-3xl border border-[#DEDEE3] overflow-hidden">
+        {loading ? (
+          <div className="p-8 text-center text-sm text-[#6A6D78]">Loading experiments...</div>
+        ) : experiments.length === 0 ? (
+          <div className="p-8 text-center text-sm text-[#6A6D78]">No experiments found.</div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead>
+                <tr className="border-b border-[#DEDEE3]">
+                  <th className="text-left text-xs font-medium text-[#6A6D78] px-6 py-3">
+                    Name
+                  </th>
+                  <th className="text-left text-xs font-medium text-[#6A6D78] px-6 py-3">
+                    Builder
+                  </th>
+                  <th className="text-left text-xs font-medium text-[#6A6D78] px-6 py-3">
+                    Status
+                  </th>
+                  <th className="text-left text-xs font-medium text-[#6A6D78] px-6 py-3">
+                    Treasury
+                  </th>
+                  <th className="text-left text-xs font-medium text-[#6A6D78] px-6 py-3">
+                    Milestones
+                  </th>
+                  <th className="text-left text-xs font-medium text-[#6A6D78] px-6 py-3" />
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+              </thead>
+              <tbody>
+                {experiments.map((expt) => {
+                  const passedCount = expt.milestones.filter(
+                    (m) => m.status === 3
+                  ).length;
+                  const treasurySOL =
+                    Number(expt.totalTreasuryReceived) / LAMPORTS_PER_SOL;
+
+                  return (
+                    <tr
+                      key={expt.address.toBase58()}
+                      className="border-b border-[#DEDEE3] last:border-0 hover:bg-[#FAFAF9] transition-colors"
+                    >
+                      <td className="px-6 py-4">
+                        <span className="text-sm font-medium text-[#1C1917]">
+                          {expt.name}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4">
+                        <Link
+                          href={`/profile/${expt.builder.toBase58()}`}
+                          className="text-xs text-[#6A6D78] font-mono hover:text-[#1C1917] transition-colors"
+                        >
+                          {truncateAddress(expt.builder.toBase58())}
+                        </Link>
+                      </td>
+                      <td className="px-6 py-4">
+                        <Badge
+                          variant="outline"
+                          className={`text-[10px] px-1.5 py-0 h-4 font-normal ${
+                            STATUS_COLORS[expt.status] || ""
+                          }`}
+                        >
+                          {exptStatusLabel(expt.status)}
+                        </Badge>
+                      </td>
+                      <td className="px-6 py-4">
+                        <span className="text-sm text-[#1C1917]">
+                          {treasurySOL.toFixed(2)} SOL
+                        </span>
+                      </td>
+                      <td className="px-6 py-4">
+                        <span className="text-xs text-[#6A6D78]">
+                          {passedCount}/{expt.milestoneCount}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4 text-right">
+                        <Link
+                          href={`/internal/${hash}/experiment/${expt.address.toBase58()}`}
+                          className="text-xs text-[#140E1C] hover:underline inline-flex items-center gap-1"
+                        >
+                          View <ExternalLink className="h-3 w-3" />
+                        </Link>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
     </div>
   );

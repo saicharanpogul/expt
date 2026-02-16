@@ -32,6 +32,12 @@
           "signer": true
         },
         {
+          "name": "mint",
+          "docs": [
+            "Mint used in PDA derivation"
+          ]
+        },
+        {
           "name": "expt_config",
           "docs": [
             "ExptConfig PDA"
@@ -58,6 +64,10 @@
               {
                 "kind": "account",
                 "path": "builder"
+              },
+              {
+                "kind": "account",
+                "path": "mint"
               }
             ]
           }
@@ -259,7 +269,7 @@
         {
           "name": "expt_config",
           "docs": [
-            "ExptConfig PDA — one active experiment per builder"
+            "ExptConfig PDA — unique per builder+mint pair"
           ],
           "writable": true,
           "pda": {
@@ -283,6 +293,10 @@
               {
                 "kind": "account",
                 "path": "builder"
+              },
+              {
+                "kind": "account",
+                "path": "mint"
               }
             ]
           }
@@ -290,7 +304,7 @@
         {
           "name": "treasury",
           "docs": [
-            "Treasury PDA — holds SOL for the experiment"
+            "Treasury PDA — holds SOL and tokens for the experiment"
           ],
           "pda": {
             "seeds": [
@@ -315,17 +329,114 @@
           }
         },
         {
-          "name": "presale",
-          "docs": [
-            "Meteora presale vault account",
-            "and presale.owner must equal the Treasury PDA"
-          ]
-        },
-        {
           "name": "mint",
           "docs": [
-            "Expt Coin mint (created externally or passed in)"
-          ]
+            "Expt Coin mint — created on-chain by this instruction.",
+            "Pass a fresh Keypair. Treasury PDA is set as the initial mint authority."
+          ],
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "treasury_token",
+          "docs": [
+            "Treasury's token account for the Expt Coin.",
+            "Initialized here to hold the total supply."
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "account",
+                "path": "treasury"
+              },
+              {
+                "kind": "const",
+                "value": [
+                  6,
+                  221,
+                  246,
+                  225,
+                  215,
+                  101,
+                  161,
+                  147,
+                  217,
+                  203,
+                  225,
+                  70,
+                  206,
+                  235,
+                  121,
+                  172,
+                  28,
+                  180,
+                  133,
+                  237,
+                  95,
+                  91,
+                  55,
+                  145,
+                  58,
+                  140,
+                  245,
+                  133,
+                  126,
+                  255,
+                  0,
+                  169
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "mint"
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                140,
+                151,
+                37,
+                143,
+                78,
+                36,
+                137,
+                241,
+                187,
+                61,
+                16,
+                41,
+                20,
+                142,
+                13,
+                131,
+                11,
+                90,
+                19,
+                153,
+                218,
+                255,
+                16,
+                132,
+                4,
+                142,
+                123,
+                216,
+                219,
+                233,
+                248,
+                89
+              ]
+            }
+          }
+        },
+        {
+          "name": "token_program"
+        },
+        {
+          "name": "associated_token_program",
+          "address": "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL"
         },
         {
           "name": "system_program",
@@ -383,6 +494,243 @@
         }
       ],
       "args": []
+    },
+    {
+      "name": "initialize_presale_from_treasury",
+      "docs": [
+        "Initialize a Meteora presale using tokens from the treasury.",
+        "Only the builder can call this after create_expt_config.",
+        "Tokens are transferred from treasury ATA → presale vault via CPI."
+      ],
+      "discriminator": [
+        95,
+        78,
+        163,
+        162,
+        97,
+        117,
+        35,
+        201
+      ],
+      "accounts": [
+        {
+          "name": "builder",
+          "docs": [
+            "Builder who created the experiment"
+          ],
+          "writable": true,
+          "signer": true,
+          "relations": [
+            "expt_config"
+          ]
+        },
+        {
+          "name": "expt_config",
+          "docs": [
+            "ExptConfig PDA (writable — we store the presale pubkey)"
+          ],
+          "writable": true
+        },
+        {
+          "name": "treasury",
+          "docs": [
+            "Treasury PDA — owns the presale tokens and becomes presale owner",
+            "Also acts as payer for Meteora presale account creation (funded by builder)"
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  116,
+                  114,
+                  101,
+                  97,
+                  115,
+                  117,
+                  114,
+                  121
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "expt_config"
+              }
+            ]
+          }
+        },
+        {
+          "name": "treasury_token",
+          "docs": [
+            "Treasury's token account holding experiment tokens (source for presale)"
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "account",
+                "path": "treasury"
+              },
+              {
+                "kind": "const",
+                "value": [
+                  6,
+                  221,
+                  246,
+                  225,
+                  215,
+                  101,
+                  161,
+                  147,
+                  217,
+                  203,
+                  225,
+                  70,
+                  206,
+                  235,
+                  121,
+                  172,
+                  28,
+                  180,
+                  133,
+                  237,
+                  95,
+                  91,
+                  55,
+                  145,
+                  58,
+                  140,
+                  245,
+                  133,
+                  126,
+                  255,
+                  0,
+                  169
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "mint"
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                140,
+                151,
+                37,
+                143,
+                78,
+                36,
+                137,
+                241,
+                187,
+                61,
+                16,
+                41,
+                20,
+                142,
+                13,
+                131,
+                11,
+                90,
+                19,
+                153,
+                218,
+                255,
+                16,
+                132,
+                4,
+                142,
+                123,
+                216,
+                219,
+                233,
+                248,
+                89
+              ]
+            }
+          }
+        },
+        {
+          "name": "base",
+          "docs": [
+            "Random keypair used for presale PDA derivation (Meteora requires this)"
+          ],
+          "signer": true
+        },
+        {
+          "name": "mint",
+          "docs": [
+            "Experiment token mint"
+          ]
+        },
+        {
+          "name": "quote_mint",
+          "docs": [
+            "Quote token mint (e.g. WSOL)"
+          ]
+        },
+        {
+          "name": "presale",
+          "docs": [
+            "Presale PDA (will be initialized by Meteora)"
+          ],
+          "writable": true
+        },
+        {
+          "name": "presale_authority",
+          "address": "4Xgt6XKZiowAGNdPWngVAwpYbSwAmbBnRBPtCFXhrypc"
+        },
+        {
+          "name": "presale_vault",
+          "docs": [
+            "Presale vault for base tokens (will be initialized by Meteora)"
+          ],
+          "writable": true
+        },
+        {
+          "name": "quote_vault",
+          "docs": [
+            "Quote token vault (will be initialized by Meteora)"
+          ],
+          "writable": true
+        },
+        {
+          "name": "base_token_program",
+          "docs": [
+            "Base token program (for experiment token)"
+          ]
+        },
+        {
+          "name": "quote_token_program",
+          "docs": [
+            "Quote token program (for WSOL)"
+          ]
+        },
+        {
+          "name": "presale_program",
+          "address": "presSVxnf9UU8jMxhgSMqaRwNiT36qeBdNeTRKjTdbj"
+        },
+        {
+          "name": "event_authority"
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "args",
+          "type": {
+            "defined": {
+              "name": "InitPresaleFromTreasuryArgs"
+            }
+          }
+        }
+      ]
     },
     {
       "name": "initiate_veto",
@@ -570,16 +918,16 @@
           "writable": true
         },
         {
-          "name": "payer_token_a",
+          "name": "treasury_token_a",
           "docs": [
-            "Payer's token A account (holds the Expt Coin supply)"
+            "Treasury's token A account (holds the Expt Coin supply minted during create)"
           ],
           "writable": true
         },
         {
-          "name": "payer_token_b",
+          "name": "treasury_token_b",
           "docs": [
-            "Payer's token B account (WSOL)"
+            "Treasury's token B account (WSOL — funded by withdraw_presale_funds)"
           ],
           "writable": true
         },
@@ -694,6 +1042,12 @@
           "signer": true
         },
         {
+          "name": "mint",
+          "docs": [
+            "Mint used in PDA derivation"
+          ]
+        },
+        {
           "name": "expt_config",
           "docs": [
             "ExptConfig PDA"
@@ -720,6 +1074,10 @@
               {
                 "kind": "account",
                 "path": "builder"
+              },
+              {
+                "kind": "account",
+                "path": "mint"
               }
             ]
           }
@@ -1218,6 +1576,16 @@
       "code": 6029,
       "name": "PresaleFundsNotWithdrawn",
       "msg": "Presale funds have not been withdrawn yet"
+    },
+    {
+      "code": 6030,
+      "name": "PresaleAlreadyInitialized",
+      "msg": "Presale has already been initialized for this experiment"
+    },
+    {
+      "code": 6031,
+      "name": "InsufficientTreasuryBalance",
+      "msg": "Insufficient token balance in treasury"
     }
   ],
   "types": [
@@ -1268,6 +1636,20 @@
                 }
               }
             }
+          },
+          {
+            "name": "total_supply",
+            "docs": [
+              "Total token supply to mint (in smallest units)"
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "decimals",
+            "docs": [
+              "Token decimals (typically 9)"
+            ],
+            "type": "u8"
           }
         ]
       }
@@ -1529,7 +1911,7 @@
       "name": "ExptConfig",
       "docs": [
         "Main experiment configuration account.",
-        "PDA seeds: [b\"expt_config\", builder.key()]"
+        "PDA seeds: [b\"expt_config\", builder.key(), mint.key()]"
       ],
       "serialization": "bytemuck",
       "repr": {
@@ -1715,6 +2097,13 @@
             "type": "pubkey"
           },
           {
+            "name": "total_supply",
+            "docs": [
+              "Total token supply minted during experiment creation"
+            ],
+            "type": "u64"
+          },
+          {
             "name": "padding",
             "docs": [
               "Reserved for future use"
@@ -1722,9 +2111,57 @@
             "type": {
               "array": [
                 "u8",
-                32
+                24
               ]
             }
+          }
+        ]
+      }
+    },
+    {
+      "name": "InitPresaleFromTreasuryArgs",
+      "docs": [
+        "Arguments for initializing a presale from the treasury"
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "presale_maximum_cap",
+            "type": "u64"
+          },
+          {
+            "name": "presale_minimum_cap",
+            "type": "u64"
+          },
+          {
+            "name": "presale_start_time",
+            "type": "u64"
+          },
+          {
+            "name": "presale_end_time",
+            "type": "u64"
+          },
+          {
+            "name": "presale_supply",
+            "docs": [
+              "Amount of experiment tokens to deposit into the presale vault"
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "buyer_min_deposit_cap",
+            "docs": [
+              "Minimum deposit per buyer (in quote token lamports)"
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "buyer_max_deposit_cap",
+            "docs": [
+              "Maximum deposit per buyer (in quote token lamports)"
+            ],
+            "type": "u64"
           }
         ]
       }

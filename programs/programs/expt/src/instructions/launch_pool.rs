@@ -4,6 +4,7 @@ use anchor_spl::token_interface::{Mint, TokenAccount, TokenInterface};
 use crate::cpi_interfaces::damm_v2::*;
 use crate::errors::ExptError;
 use crate::events::EvtPoolLaunched;
+use crate::math;
 use crate::state::*;
 use crate::constants::seeds;
 
@@ -11,7 +12,10 @@ use crate::constants::seeds;
 ///
 /// This instruction:
 /// 1. Creates a customizable DAMM v2 pool with anti-sniper fees
-/// 2. Adds initial liquidity (75% of treasury as SOL + 100% of token supply)
+/// 2. Computes pool params on-chain from treasury balances:
+///    - 100% of tokens → LP
+///    - 75% of SOL → LP, 25% stays for builder milestone claims
+///    - sqrtPrice, ±10x concentrated range, liquidity (Q64.64)
 /// 3. Permanently locks the LP position
 /// 4. Stores pool/position references on ExptConfig
 ///
@@ -72,13 +76,13 @@ pub struct LaunchPoolCtx<'info> {
     #[account(mut)]
     pub token_b_vault: UncheckedAccount<'info>,
 
-    /// Payer's token A account (holds the Expt Coin supply)
+    /// Treasury's token A account (holds the Expt Coin supply minted during create)
     #[account(mut)]
-    pub payer_token_a: Box<InterfaceAccount<'info, TokenAccount>>,
+    pub treasury_token_a: Box<InterfaceAccount<'info, TokenAccount>>,
 
-    /// Payer's token B account (WSOL)
+    /// Treasury's token B account (WSOL — funded by withdraw_presale_funds)
     #[account(mut)]
-    pub payer_token_b: Box<InterfaceAccount<'info, TokenAccount>>,
+    pub treasury_token_b: Box<InterfaceAccount<'info, TokenAccount>>,
 
     /// Token A program (SPL Token or Token-2022)
     pub token_a_program: Interface<'info, TokenInterface>,
@@ -102,21 +106,9 @@ pub struct LaunchPoolCtx<'info> {
     pub event_authority: UncheckedAccount<'info>,
 }
 
-/// Arguments for launch_pool (passed by caller)
+/// Arguments for launch_pool
 #[derive(AnchorSerialize, AnchorDeserialize, Clone)]
 pub struct LaunchPoolArgs {
-    /// Amount of token A (Expt Coin) to add as liquidity
-    pub token_a_amount: u64,
-    /// Amount of token B (SOL/WSOL) to add as liquidity (75% of treasury)
-    pub token_b_amount: u64,
-    /// Pool liquidity (Q64.64 — computed off-chain)
-    pub liquidity: u128,
-    /// Initial sqrt price as Q64.64 — sqrt(token_b / token_a) << 64
-    pub sqrt_price: u128,
-    /// Min sqrt price (Q64.64) — use MIN_SQRT_PRICE (4295048016) for full range
-    pub sqrt_min_price: u128,
-    /// Max sqrt price (Q64.64) — use MAX_SQRT_PRICE (79226673521066979257578248091) for full range
-    pub sqrt_max_price: u128,
     /// Activation point (timestamp when pool becomes tradable)
     pub activation_point: Option<u64>,
 }
@@ -134,30 +126,57 @@ pub fn handle_launch_pool(ctx: Context<LaunchPoolCtx>, args: LaunchPoolArgs) -> 
         require!(config.pool_launched == 0, ExptError::PoolAlreadyLaunched);
     }
 
-    // 2. Build DAMM v2 pool parameters
-    //    Fee schedule: flat 0.05% fee (no time decay to stay above MIN_FEE_NUMERATOR)
-    //    Dynamic fees disabled for simplicity
+    // 2. Compute pool parameters on-chain from treasury balances
+    //    - 100% of tokens → LP
+    //    - 75% of SOL → LP (25% stays for builder milestone claims)
+    //    - sqrtPrice, ±10x concentrated range, liquidity (Q64.64)
+    let (token_a_amount, token_b_amount, sqrt_price, sqrt_min_price, sqrt_max_price, liquidity) =
+        math::compute_pool_params(
+            ctx.accounts.treasury_token_a.amount,
+            ctx.accounts.treasury_token_b.amount,
+        )?;
+
+    msg!(
+        "Pool params: tokenA={}, tokenB={} (75% of {}), sqrtPrice={}, liquidity={}",
+        token_a_amount,
+        token_b_amount,
+        ctx.accounts.treasury_token_b.amount,
+        sqrt_price,
+        liquidity
+    );
+
+    // 3. Build DAMM v2 pool parameters
+    //    Fee schedule: Anti-sniper — starts at 50%, decays to ~1% over 120 seconds
+    //    Formula: fee × (1 − reduction_factor/10_000)^period
+    //    Dynamic fees enabled for volatility-responsive pricing
     let pool_params = InitializeCustomizablePoolParameters {
         pool_fees: PoolFeeParameters {
             base_fee: BaseFeeParameters::exponential_time_scheduler(
-                500_000,            // cliff_fee_numerator (0.05% = 500_000 / 1_000_000_000)
-                0,                  // number_of_period (0 = no time decay → flat fee)
-                0,                  // period_frequency (unused when number_of_period=0)
-                0,                  // reduction_factor (unused when number_of_period=0)
+                500_000_000,            // cliff_fee_numerator (50% = 500_000_000 / 1_000_000_000)
+                12,                     // number_of_period (12 decay steps)
+                10,                     // period_frequency (10 seconds per step → 120s total)
+                2783,                   // reduction_factor: (1-2783/10000)^12 ≈ 0.02 → 50%×0.02 ≈ 1%
             ),
-            dynamic_fee: None,  // Keep it simple — no dynamic fees for launch
+            dynamic_fee: Some(DynamicFeeParameters {
+                bin_step: 1,                  // DAMM v2 forces bin_step = 1 bps in v1
+                bin_step_u128: 1844674407370955, // Q64.64 of 1 bps (forced default)
+                filter_period: 10,            // 10-second filter for volatility smoothing
+                decay_period: 120,            // 2-minute decay for volatility reference reset
+                reduction_factor: 5000,       // 50% reduction factor for variable fee
+                max_volatility_accumulator: 350_000,  // Cap on volatility accumulator
+                variable_fee_control: 40_000, // Controls sensitivity of variable fee to volatility
+            }),
         },
-        sqrt_min_price: args.sqrt_min_price,
-        sqrt_max_price: args.sqrt_max_price,
+        sqrt_min_price,
+        sqrt_max_price,
         has_alpha_vault: false,
-        liquidity: args.liquidity,
-        sqrt_price: args.sqrt_price,
+        liquidity,
+        sqrt_price,
         activation_type: 1,   // Timestamp-based
-        collect_fee_mode: 0,  // Both tokens
+        collect_fee_mode: 1,  // Quote token only
         activation_point: args.activation_point,
     };
 
-    // 3. CPI: initialize_customizable_pool
     // Treasury PDA is the "creator" — it owns the position NFT for fee claiming
     let expt_config_key = ctx.accounts.expt_config.key();
     let treasury_bump = {
@@ -170,11 +189,29 @@ pub fn handle_launch_pool(ctx: Context<LaunchPoolCtx>, args: LaunchPoolArgs) -> 
         &[treasury_bump],
     ];
 
+    // 4. Fund treasury PDA with SOL for rent payments during DAMM v2 CPI
+    //    Treasury PDA must be the payer because DAMM v2 uses payer as the
+    //    TransferChecked authority, and treasury PDA owns the token accounts.
+    let rent_funding = 100_000_000; // 0.1 SOL for pool + vaults + position rent
+    anchor_lang::system_program::transfer(
+        CpiContext::new(
+            ctx.accounts.system_program.to_account_info(),
+            anchor_lang::system_program::Transfer {
+                from: ctx.accounts.payer.to_account_info(),
+                to: ctx.accounts.treasury.to_account_info(),
+            },
+        ),
+        rent_funding,
+    )?;
+
+    // 5. CPI: initialize_customizable_pool
+    // Treasury PDA is BOTH creator (index 0) and payer (index 3).
+    // It signs via invoke_signed, owns the token accounts, and pays rent.
     let cpi_accounts = [
         ctx.accounts.treasury.to_account_info(),          // 0: creator (treasury PDA)
         ctx.accounts.position_nft_mint.to_account_info(), // 1: position_nft_mint
         ctx.accounts.position_nft_account.to_account_info(), // 2: position_nft_account
-        ctx.accounts.payer.to_account_info(),              // 3: payer
+        ctx.accounts.treasury.to_account_info(),           // 3: payer = treasury PDA (signer via invoke_signed)
         ctx.accounts.damm_pool_authority.to_account_info(), // 4: pool_authority
         ctx.accounts.damm_pool.to_account_info(),          // 5: pool
         ctx.accounts.damm_position.to_account_info(),      // 6: position
@@ -182,8 +219,8 @@ pub fn handle_launch_pool(ctx: Context<LaunchPoolCtx>, args: LaunchPoolArgs) -> 
         ctx.accounts.token_b_mint.to_account_info(),       // 8: token_b_mint
         ctx.accounts.token_a_vault.to_account_info(),      // 9: token_a_vault
         ctx.accounts.token_b_vault.to_account_info(),      // 10: token_b_vault
-        ctx.accounts.payer_token_a.to_account_info(),      // 11: payer_token_a
-        ctx.accounts.payer_token_b.to_account_info(),      // 12: payer_token_b
+        ctx.accounts.treasury_token_a.to_account_info(),   // 11: payer_token_a (treasury's)
+        ctx.accounts.treasury_token_b.to_account_info(),   // 12: payer_token_b (treasury's)
         ctx.accounts.token_a_program.to_account_info(),    // 13: token_a_program
         ctx.accounts.token_b_program.to_account_info(),    // 14: token_b_program
         ctx.accounts.token_2022_program.to_account_info(), // 15: token_2022_program
@@ -198,8 +235,8 @@ pub fn handle_launch_pool(ctx: Context<LaunchPoolCtx>, args: LaunchPoolArgs) -> 
         &[treasury_seeds],
     )?;
 
-    // 4. CPI: permanent_lock_position
-    // Lock ALL liquidity permanently using the actual liquidity amount from args.
+    // 6. CPI: permanent_lock_position
+    // Lock ALL liquidity permanently using the computed liquidity amount.
     let lock_accounts = [
         ctx.accounts.damm_pool.to_account_info(),          // 0: pool
         ctx.accounts.damm_position.to_account_info(),      // 1: position
@@ -211,11 +248,11 @@ pub fn handle_launch_pool(ctx: Context<LaunchPoolCtx>, args: LaunchPoolArgs) -> 
 
     cpi_permanent_lock_position(
         &lock_accounts,
-        args.liquidity, // Lock exactly the liquidity we deposited
+        liquidity, // Lock exactly the liquidity we deposited
         &[treasury_seeds],
     )?;
 
-    // 5. Update ExptConfig with pool info
+    // 7. Update ExptConfig with pool info
     {
         let mut config = ctx.accounts.expt_config.load_mut()?;
         config.pool_launched = 1;
@@ -224,14 +261,14 @@ pub fn handle_launch_pool(ctx: Context<LaunchPoolCtx>, args: LaunchPoolArgs) -> 
         config.lp_position = ctx.accounts.damm_position.key();
     }
 
-    // 6. Emit event
+    // 8. Emit event
     emit!(EvtPoolLaunched {
         expt_config: ctx.accounts.expt_config.key(),
         damm_pool: ctx.accounts.damm_pool.key(),
         position_nft_mint: ctx.accounts.position_nft_mint.key(),
         lp_position: ctx.accounts.damm_position.key(),
-        token_a_amount: args.token_a_amount,
-        token_b_amount: args.token_b_amount,
+        token_a_amount,
+        token_b_amount,
     });
 
     Ok(())

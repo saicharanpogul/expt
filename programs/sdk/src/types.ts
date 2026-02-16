@@ -153,6 +153,7 @@ export interface ParsedExptConfig {
   dammPool: PublicKey;
   positionNftMint: PublicKey;
   lpPosition: PublicKey;
+  totalSupply: BN;
 }
 
 export interface ParsedVetoStake {
@@ -200,6 +201,7 @@ export interface RawExptConfig {
   dammPool: PublicKey;
   positionNftMint: PublicKey;
   lpPosition: PublicKey;
+  totalSupply: BN;
   // padding fields omitted
 }
 
@@ -279,6 +281,7 @@ export function parseExptConfig(
     dammPool: raw.dammPool,
     positionNftMint: raw.positionNftMint,
     lpPosition: raw.lpPosition,
+    totalSupply: raw.totalSupply,
   };
 }
 
@@ -326,6 +329,10 @@ export interface CreateExptConfigInput {
   challengeWindow: BN;
   /** Milestones (1-3) */
   milestones: MilestoneInput[];
+  /** Total token supply to mint to treasury (in smallest units) */
+  totalSupply: BN;
+  /** Token decimals (typically 9) */
+  decimals: number;
 }
 
 /**
@@ -348,6 +355,41 @@ export function buildCreateExptConfigArgs(input: CreateExptConfigInput) {
           : Math.floor(m.deadline.getTime() / 1000)
       ),
     })),
+    totalSupply: input.totalSupply,
+    decimals: input.decimals,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Initialize Presale From Treasury
+// ---------------------------------------------------------------------------
+
+export interface InitializePresaleFromTreasuryInput {
+  /** Maximum SOL for presale (in lamports) */
+  presaleMaximumCap: BN;
+  /** Minimum SOL for presale success (in lamports) */
+  presaleMinimumCap: BN;
+  /** Start time (unix timestamp seconds) */
+  presaleStartTime: BN;
+  /** End time (unix timestamp seconds) */
+  presaleEndTime: BN;
+  /** Amount of experiment tokens to deposit in presale vault */
+  presaleSupply: BN;
+  /** Minimum deposit per buyer (in lamports) */
+  buyerMinDepositCap: BN;
+  /** Maximum deposit per buyer (in lamports) */
+  buyerMaxDepositCap: BN;
+}
+
+export function buildInitializePresaleFromTreasuryArgs(input: InitializePresaleFromTreasuryInput) {
+  return {
+    presaleMaximumCap: input.presaleMaximumCap,
+    presaleMinimumCap: input.presaleMinimumCap,
+    presaleStartTime: input.presaleStartTime,
+    presaleEndTime: input.presaleEndTime,
+    presaleSupply: input.presaleSupply,
+    buyerMinDepositCap: input.buyerMinDepositCap,
+    buyerMaxDepositCap: input.buyerMaxDepositCap,
   };
 }
 
@@ -366,3 +408,78 @@ export function buildSubmitMilestoneArgs(input: SubmitMilestoneInput) {
     deliverable: stringToBytes(input.deliverable, 200),
   };
 }
+
+// ---------------------------------------------------------------------------
+// Meteora Presale State (client-side deserialization)
+// ---------------------------------------------------------------------------
+
+/**
+ * Parsed representation of a Meteora Presale account.
+ * Layout matches the zero_copy struct documented in presale.rs.
+ */
+export interface ParsedPresaleState {
+  owner: PublicKey;
+  quoteMint: PublicKey;
+  baseMint: PublicKey;
+  baseTokenVault: PublicKey;
+  quoteTokenVault: PublicKey;
+  /** Maximum SOL the presale can raise (lamports) */
+  presaleMaximumCap: BN;
+  /** Minimum SOL the presale must raise to succeed (lamports) */
+  presaleMinimumCap: BN;
+  /** Unix timestamp when presale starts */
+  presaleStartTime: number;
+  /** Unix timestamp when presale ends */
+  presaleEndTime: number;
+  /** Total token supply for presale */
+  presaleSupply: BN;
+  /** Total SOL deposited so far (lamports) */
+  totalDeposit: BN;
+}
+
+/**
+ * Deserialize a Meteora Presale account from raw account data.
+ *
+ * Zero-copy layout offsets (8-byte Anchor discriminator at start):
+ *   DISC + 0   = owner (32 bytes)
+ *   DISC + 32  = quote_mint (32 bytes)
+ *   DISC + 64  = base_mint (32 bytes)
+ *   DISC + 96  = base_token_vault (32 bytes)
+ *   DISC + 128 = quote_token_vault (32 bytes)
+ *   ...
+ *   DISC + 200 = presale_maximum_cap (u64)
+ *   DISC + 208 = presale_minimum_cap (u64)
+ *   DISC + 216 = presale_start_time (u64)
+ *   DISC + 224 = presale_end_time (u64)
+ *   DISC + 232 = presale_supply (u64)
+ *   DISC + 240 = total_deposit (u64)
+ */
+export function parsePresaleState(data: Buffer | Uint8Array): ParsedPresaleState {
+  const DISC = 8;
+  if (data.length < DISC + 248) {
+    throw new Error(`Presale account data too short: ${data.length} bytes`);
+  }
+
+  const buf = Buffer.from(data);
+
+  const readPubkey = (offset: number) =>
+    new PublicKey(buf.subarray(DISC + offset, DISC + offset + 32));
+
+  const readU64 = (offset: number) =>
+    new BN(buf.subarray(DISC + offset, DISC + offset + 8), "le");
+
+  return {
+    owner: readPubkey(0),
+    quoteMint: readPubkey(32),
+    baseMint: readPubkey(64),
+    baseTokenVault: readPubkey(96),
+    quoteTokenVault: readPubkey(128),
+    presaleMaximumCap: readU64(200),
+    presaleMinimumCap: readU64(208),
+    presaleStartTime: readU64(216).toNumber(),
+    presaleEndTime: readU64(224).toNumber(),
+    presaleSupply: readU64(232),
+    totalDeposit: readU64(240),
+  };
+}
+

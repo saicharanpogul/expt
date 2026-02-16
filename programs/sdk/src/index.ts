@@ -23,6 +23,9 @@ export {
   PRESALE_AUTHORITY,
   MEMO_PROGRAM_ID,
   DAMM_V2_PROGRAM_ID,
+  DAMM_POOL_AUTHORITY,
+  DAMM_SEEDS,
+  NATIVE_MINT,
 } from "./constants";
 
 // PDA derivation
@@ -30,6 +33,14 @@ export {
   deriveExptConfigPda,
   deriveTreasuryPda,
   deriveVetoStakePda,
+  derivePresalePda,
+  derivePresaleVault,
+  deriveQuoteVault,
+  deriveEscrowPda,
+  deriveDammPoolPda,
+  deriveDammPositionPda,
+  deriveDammPositionNftAccount,
+  deriveDammTokenVault,
 } from "./pda";
 
 // Types & enums
@@ -45,6 +56,7 @@ export {
   parseExptConfig,
   parseMilestone,
   parseVetoStake,
+  parsePresaleState,
   buildCreateExptConfigArgs,
   buildSubmitMilestoneArgs,
 } from "./types";
@@ -54,10 +66,13 @@ export type {
   ParsedExptConfig,
   ParsedMilestone,
   ParsedVetoStake,
+  ParsedPresaleState,
   RawExptConfig,
   RawMilestone,
   RawVetoStake,
   CreateExptConfigInput,
+  InitializePresaleFromTreasuryInput,
   SubmitMilestoneInput,
   MilestoneInput,
 } from "./types";
+

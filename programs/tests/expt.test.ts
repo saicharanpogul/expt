@@ -55,9 +55,9 @@ function stringToBytes(str: string, len: number): number[] {
   return result;
 }
 
-function deriveExptConfigPda(builder: PublicKey): [PublicKey, number] {
+function deriveExptConfigPda(builder: PublicKey, mint: PublicKey): [PublicKey, number] {
   return PublicKey.findProgramAddressSync(
-    [SEEDS.EXPT_CONFIG, builder.toBuffer()],
+    [SEEDS.EXPT_CONFIG, builder.toBuffer(), mint.toBuffer()],
     PROGRAM_ID
   );
 }
@@ -132,7 +132,7 @@ describe("Expt Program — Full Lifecycle", () => {
 
   beforeAll(async () => {
     // Pre-derive PDAs so we can set presale owner = treasuryPda
-    [exptConfigPda] = deriveExptConfigPda(builder.publicKey);
+    [exptConfigPda] = deriveExptConfigPda(builder.publicKey, mintKeypair.publicKey);
     [treasuryPda] = deriveTreasuryPda(exptConfigPda);
 
     context = await startAnchor(".", [], [
@@ -250,7 +250,7 @@ describe("Expt Program — Full Lifecycle", () => {
       executable: false,
     });
 
-    const [exptConfig2] = deriveExptConfigPda(builder2.publicKey);
+    const [exptConfig2] = deriveExptConfigPda(builder2.publicKey, mintKeypair.publicKey);
     const [treasury2] = deriveTreasuryPda(exptConfig2);
 
     const presale2 = Keypair.generate();
@@ -304,7 +304,7 @@ describe("Expt Program — Full Lifecycle", () => {
       executable: false,
     });
 
-    const [exptConfig3] = deriveExptConfigPda(builder3.publicKey);
+    const [exptConfig3] = deriveExptConfigPda(builder3.publicKey, mintKeypair.publicKey);
     const [treasury3] = deriveTreasuryPda(exptConfig3);
 
     // Presale owner = builder3 (NOT treasury3) — should be rejected
@@ -443,7 +443,7 @@ describe("Expt Program — Full Lifecycle", () => {
       executable: false,
     });
 
-    const [exptConfig2] = deriveExptConfigPda(builder2.publicKey);
+    const [exptConfig2] = deriveExptConfigPda(builder2.publicKey, mintKeypair.publicKey);
     const [treasury2] = deriveTreasuryPda(exptConfig2);
 
     const failPresale = Keypair.generate();
@@ -513,6 +513,7 @@ describe("Expt Program — Full Lifecycle", () => {
       })
       .accounts({
         builder: builder.publicKey,
+        mint: mintKeypair.publicKey,
         exptConfig: exptConfigPda,
       })
       .signers([builder])
@@ -559,6 +560,7 @@ describe("Expt Program — Full Lifecycle", () => {
       })
       .accounts({
         builder: builder.publicKey,
+        mint: mintKeypair.publicKey,
         exptConfig: exptConfigPda,
       })
       .signers([builder])
@@ -623,6 +625,7 @@ describe("Expt Program — Full Lifecycle", () => {
       .claimBuilderFunds()
       .accounts({
         builder: builder.publicKey,
+        mint: mintKeypair.publicKey,
         exptConfig: exptConfigPda,
         treasury: treasuryPda,
         systemProgram: SystemProgram.programId,
@@ -649,6 +652,7 @@ describe("Expt Program — Full Lifecycle", () => {
         .claimBuilderFunds()
         .accounts({
           builder: builder.publicKey,
+          mint: mintKeypair.publicKey,
           exptConfig: exptConfigPda,
           treasury: treasuryPda,
           systemProgram: SystemProgram.programId,
@@ -679,7 +683,7 @@ describe("Expt Program — Full Lifecycle", () => {
       executable: false,
     });
 
-    const [exptConfig3] = deriveExptConfigPda(builder3.publicKey);
+    const [exptConfig3] = deriveExptConfigPda(builder3.publicKey, mintKeypair.publicKey);
     const [treasury3] = deriveTreasuryPda(exptConfig3);
 
     const presale3 = Keypair.generate();
@@ -744,6 +748,7 @@ describe("Expt Program — Full Lifecycle", () => {
         })
         .accounts({
           builder: builder3.publicKey,
+          mint: mintKeypair.publicKey,
           exptConfig: exptConfig3,
         })
         .signers([builder3])
@@ -784,7 +789,7 @@ describe("Expt Program — Veto Mechanics", () => {
   let treasuryPda: PublicKey;
 
   beforeAll(async () => {
-    [exptConfigPda] = deriveExptConfigPda(builder.publicKey);
+    [exptConfigPda] = deriveExptConfigPda(builder.publicKey, mintKeypair.publicKey);
     [treasuryPda] = deriveTreasuryPda(exptConfigPda);
 
     context = await startAnchor(".", [], [
@@ -900,6 +905,7 @@ describe("Expt Program — Veto Mechanics", () => {
       })
       .accounts({
         builder: builder.publicKey,
+        mint: mintKeypair.publicKey,
         exptConfig: exptConfigPda,
       })
       .signers([builder])
@@ -1006,7 +1012,7 @@ describe("Expt Program — Veto Threshold Exceeded", () => {
   let treasuryPda: PublicKey;
 
   beforeAll(async () => {
-    [exptConfigPda] = deriveExptConfigPda(builder.publicKey);
+    [exptConfigPda] = deriveExptConfigPda(builder.publicKey, mintKeypair.publicKey);
     [treasuryPda] = deriveTreasuryPda(exptConfigPda);
 
     context = await startAnchor(".", [], [
@@ -1142,6 +1148,7 @@ describe("Expt Program — Veto Threshold Exceeded", () => {
       })
       .accounts({
         builder: builder.publicKey,
+        mint: mintKeypair.publicKey,
         exptConfig: exptConfigPda,
       })
       .signers([builder])
@@ -1194,6 +1201,7 @@ describe("Expt Program — Veto Threshold Exceeded", () => {
         .claimBuilderFunds()
         .accounts({
           builder: builder.publicKey,
+          mint: mintKeypair.publicKey,
           exptConfig: exptConfigPda,
           treasury: treasuryPda,
           systemProgram: SystemProgram.programId,
@@ -1218,6 +1226,7 @@ describe("Expt Program — Veto Threshold Exceeded", () => {
       })
       .accounts({
         builder: builder.publicKey,
+        mint: mintKeypair.publicKey,
         exptConfig: exptConfigPda,
       })
       .signers([builder])
@@ -1241,6 +1250,7 @@ describe("Expt Program — Veto Threshold Exceeded", () => {
       .claimBuilderFunds()
       .accounts({
         builder: builder.publicKey,
+        mint: mintKeypair.publicKey,
         exptConfig: exptConfigPda,
         treasury: treasuryPda,
         systemProgram: SystemProgram.programId,
@@ -1272,7 +1282,7 @@ describe("Expt Program — Edge Cases", () => {
   let treasuryPda: PublicKey;
 
   beforeAll(async () => {
-    [exptConfigPda] = deriveExptConfigPda(builder.publicKey);
+    [exptConfigPda] = deriveExptConfigPda(builder.publicKey, mintKeypair.publicKey);
     [treasuryPda] = deriveTreasuryPda(exptConfigPda);
 
     context = await startAnchor(".", [], [
@@ -1399,6 +1409,7 @@ describe("Expt Program — Edge Cases", () => {
       })
       .accounts({
         builder: builder.publicKey,
+        mint: mintKeypair.publicKey,
         exptConfig: exptConfigPda,
       })
       .signers([builder])
@@ -1413,6 +1424,7 @@ describe("Expt Program — Edge Cases", () => {
         })
         .accounts({
           builder: builder.publicKey,
+          mint: mintKeypair.publicKey,
           exptConfig: exptConfigPda,
         })
         .signers([builder])
@@ -1430,6 +1442,7 @@ describe("Expt Program — Edge Cases", () => {
         .claimBuilderFunds()
         .accounts({
           builder: builder.publicKey,
+          mint: mintKeypair.publicKey,
           exptConfig: exptConfigPda,
           treasury: treasuryPda,
           systemProgram: SystemProgram.programId,
@@ -1469,6 +1482,7 @@ describe("Expt Program — Edge Cases", () => {
         })
         .accounts({
           builder: builder.publicKey,
+          mint: mintKeypair.publicKey,
           exptConfig: exptConfigPda,
         })
         .signers([builder])
@@ -1498,7 +1512,7 @@ describe("Expt Program — Presale Failure Path", () => {
   let treasuryPda: PublicKey;
 
   beforeAll(async () => {
-    [exptConfigPda] = deriveExptConfigPda(builder.publicKey);
+    [exptConfigPda] = deriveExptConfigPda(builder.publicKey, mintKeypair.publicKey);
     [treasuryPda] = deriveTreasuryPda(exptConfigPda);
 
     context = await startAnchor(".", [], [
@@ -1600,6 +1614,7 @@ describe("Expt Program — Presale Failure Path", () => {
         })
         .accounts({
           builder: builder.publicKey,
+          mint: mintKeypair.publicKey,
           exptConfig: exptConfigPda,
         })
         .signers([builder])
@@ -1616,6 +1631,7 @@ describe("Expt Program — Presale Failure Path", () => {
         .claimBuilderFunds()
         .accounts({
           builder: builder.publicKey,
+          mint: mintKeypair.publicKey,
           exptConfig: exptConfigPda,
           treasury: treasuryPda,
           systemProgram: SystemProgram.programId,

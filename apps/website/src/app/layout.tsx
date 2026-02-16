@@ -4,7 +4,7 @@ import "./globals.css";
 import { NavBar } from "@/components/nav-bar";
 import { Footer } from "@/components/footer";
 import { Providers } from "@/components/providers";
-
+import { Suspense } from "react";
 const dmSans = DM_Sans({
   variable: "--font-dm-sans",
   subsets: ["latin"],
@@ -33,7 +33,7 @@ export default function RootLayout({
       <body className={`${dmSans.variable} font-sans antialiased`}>
         <Providers>
           <div className="min-h-screen flex flex-col">
-            <NavBar />
+            <Suspense><NavBar /></Suspense>
             <main className="flex-1">{children}</main>
             <Footer />
           </div>
