@@ -66,8 +66,8 @@ Everything stays liquid. Everything stays observable.
 
 | # | Step | Actor | Method | Description |
 |---|------|-------|--------|-------------|
-| 1 | **Create Presale** | Builder | Meteora SDK | Create presale vault with `owner = Treasury PDA` |
-| 2 | **Create Experiment** | Builder | `create_expt_config` | Define milestones, veto params; validates presale owner = Treasury PDA |
+| 1 | **Create Experiment** | Builder | `create_expt_config` | Define milestones, veto params; mints token supply to treasury |
+| 2 | **Initialize Presale** | Builder | `initialize_presale_from_treasury` | CPI into Meteora to create presale vault (owner = Treasury PDA) |
 | 3 | **Deposit** | Supporters | Meteora directly | Commit SOL to presale vault |
 | 4 | **Finalize Presale** | Anyone | `finalize_presale` | Check min cap met → status `Active` or `PresaleFailed` |
 | 5 | **Withdraw Funds** | Anyone | `withdraw_presale_funds` | CPI `creator_withdraw` → Treasury PDA; 75/25 split |
@@ -126,10 +126,11 @@ Both integrations use **raw CPI** — no external crate dependencies. Instructio
 
 | Instruction | Signer | Description |
 |-------------|--------|-------------|
-| `create_expt_config` | Builder | Initialize experiment with milestones, veto params. Validates presale owner = Treasury PDA |
+| `create_expt_config` | Builder | Initialize experiment with milestones, veto params. Mints token supply to treasury, revokes mint authority |
+| `initialize_presale_from_treasury` | Builder | CPI into Meteora to create presale vault with `owner = Treasury PDA`; deposits presale supply from treasury |
 | `finalize_presale` | Anyone | Read presale state, set `Active` if min cap met |
 | `withdraw_presale_funds` | Anyone | CPI `creator_withdraw` on Meteora. 25% → treasury, 75% reserved for LP |
-| `launch_pool` | Anyone | CPI DAMM v2: create pool + add LP (75%) + permanent lock |
+| `launch_pool` | Anyone | CPI DAMM v2: create pool + add LP (75%) + permanent lock. Pool params computed on-chain |
 
 ### Milestone Management
 
@@ -212,19 +213,21 @@ If a builder stops shipping:
 
 ```
 expt.fun/
-├── PRD.md                          # Product Requirements Document
 ├── README.md                       # This file
+├── MECHANICS.md                    # Technical deep-dive on platform mechanics
 ├── programs/                       # Anchor workspace
 │   └── programs/expt/src/
-│       ├── lib.rs                  # Program entry point (10 instructions)
+│       ├── lib.rs                  # Program entry point (11 instructions)
 │       ├── constants.rs            # Seeds, limits, program IDs
 │       ├── errors.rs               # Custom error types
 │       ├── events.rs               # On-chain event definitions
+│       ├── math.rs                 # sqrt price calculation helpers
 │       ├── state/
 │       │   ├── expt_config.rs      # ExptConfig (zero_copy, 1728 bytes)
 │       │   └── veto_stake.rs       # VetoStake account
 │       ├── instructions/
 │       │   ├── create_expt_config.rs
+│       │   ├── initialize_presale_from_treasury.rs
 │       │   ├── finalize_presale.rs
 │       │   ├── withdraw_presale_funds.rs
 │       │   ├── unwrap_treasury_wsol.rs
@@ -235,17 +238,36 @@ expt.fun/
 │       │   ├── claim_builder_funds.rs
 │       │   └── claim_trading_fees.rs
 │       └── cpi_interfaces/
-│           ├── presale.rs          # Meteora Presale CPI (creator_withdraw)
+│           ├── presale.rs          # Meteora Presale CPI (create, deposit, withdraw)
 │           └── damm_v2.rs          # DAMM v2 CPI (pool, lock, fees)
-│   ├── sdk/                        # TypeScript SDK
+│   ├── sdk/                        # TypeScript SDK (@expt/sdk)
 │   │   └── src/
 │   │       ├── client.ts           # ExptClient — instruction builders
 │   │       ├── constants.ts        # Program IDs, PDAs, seeds
+│   │       ├── pda.ts              # PDA derivation helpers
 │   │       ├── types.ts            # Parsed types, enums, helpers
 │   │       └── idl/expt.json       # Anchor IDL (auto-synced)
 │   └── tests/
 │       └── localnet-e2e.ts         # Full lifecycle E2E test
-└── apps/                           # Frontend applications
+├── apps/website/                   # Next.js frontend
+│   └── src/
+│       ├── app/
+│       │   ├── page.tsx            # Landing page
+│       │   ├── browse/page.tsx     # Browse experiments
+│       │   ├── create/page.tsx     # Create experiment form
+│       │   ├── experiment/[address]/
+│       │   │   ├── page.tsx        # Public experiment detail
+│       │   │   └── presale/page.tsx # Presale deposit page
+│       │   ├── profile/page.tsx    # User profile
+│       │   └── internal/[hash]/    # Admin debug pages
+│       ├── hooks/
+│       │   ├── use-expt-client.ts   # ExptClient React hook
+│       │   └── use-solana-signer.ts # Privy wallet signer hook
+│       ├── components/
+│       │   ├── nav-bar.tsx         # Navigation with wallet connect
+│       │   └── providers.tsx       # Privy + Solana providers
+│       └── lib/
+│           └── create-experiment.ts # Experiment creation helpers
 ```
 
 ---
@@ -342,11 +364,43 @@ bun run tests/localnet-e2e.ts
 
 ---
 
+## Website
+
+The frontend is a Next.js app located in `apps/website/`. It connects to the Solana program via the `@expt/sdk` package.
+
+### Key Features
+
+- **Browse & Create** — Discover experiments or create your own with milestone definitions and metadata upload
+- **Experiment Detail** — View experiment status, milestones timeline, and presale progress
+- **Milestone Actions** — Resolve milestones, claim builder funds, veto dishonest claims
+- **Presale Deposit** — Deposit SOL into active presales via Meteora escrow
+- **Privy Wallet** — Embedded wallet integration for seamless Solana signing
+- **Admin Panel** — Internal debug page with pool launch, swap, and fee claim controls
+
+### Running Locally
+
+```bash
+cd apps/website
+bun install
+bun run dev
+```
+
+---
+
 ## Building
 
 ```bash
+# Program
 cd programs
 anchor build
+
+# SDK
+cd programs/sdk
+npm run build
+
+# Website
+cd apps/website
+bun run build
 ```
 
 ---
