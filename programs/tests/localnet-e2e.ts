@@ -1267,10 +1267,9 @@ async function main() {
   info(`totalClaimedByBuilder: ${config5.totalClaimedByBuilder.toString()} lamports`);
   if (!config5.totalClaimedByBuilder.gtn(0)) fail("totalClaimedByBuilder should be > 0");
   // Only passed milestones (M0: 3300 + M2: 3300 = 6600 bps = 66%)
-  // With DAMM v2 pool, most SOL is in pool vaults. The builder claims 66%
-  // of the treasury's NATIVE SOL (after pool deposit), not the full totalTreasuryReceived.
-  // The theoretical max is 66% of 1.25 SOL = 0.825 SOL, but actual depends on available SOL.
-  const theoreticalMaxClaim = 825_000_000; // 66% of 1.25 SOL 
+  // Theoretical max = DEPOSIT_AMOUNT × 25% (treasury share) × 66% (unlocked bps)
+  const treasuryReceived = Number(DEPOSIT_AMOUNT) * 25 / 100;
+  const theoreticalMaxClaim = Math.floor(treasuryReceived * 6600 / 10000);
   const actualClaim = config5.totalClaimedByBuilder.toNumber();
   info(`Expected max claim: ${theoreticalMaxClaim}, got ${actualClaim}`);
   if (actualClaim <= 0) {
@@ -1406,7 +1405,7 @@ async function main() {
   console.log("\n🎉 ALL E2E TESTS PASSED!\n");
   console.log("  Flow completed:");
   console.log("    1. Created real Meteora presale (treasury PDA as owner)");
-  console.log("    2. Deposited 5 SOL via escrow");
+  console.log(`    2. Deposited ${Number(DEPOSIT_AMOUNT) / LAMPORTS_PER_SOL} SOL via escrow`);
   console.log("    3. Created ExptConfig linked to presale");
   console.log("    4. Finalized presale → Active");
   console.log("    5. Withdrew presale funds via CPI (withdraw_presale_funds)");
