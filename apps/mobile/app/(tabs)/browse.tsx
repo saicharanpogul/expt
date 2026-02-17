@@ -11,41 +11,40 @@ import {
 import { useRouter } from "expo-router";
 import {
   fetchExperiments,
-  statusLabel,
   lamportsToSol,
-  type Experiment,
+  ExptStatus,
+  type ParsedExptConfig,
 } from "../../lib/api";
 import { colors, spacing, radius, fonts } from "../../lib/theme";
 
 const STATUS_FILTERS = [
   { label: "All", value: undefined },
-  { label: "Active", value: 2 },
-  { label: "Presale", value: 1 },
-  { label: "Completed", value: 3 },
-  { label: "Failed", value: 5 },
+  { label: "Active", value: ExptStatus.Active },
+  { label: "Presale", value: ExptStatus.PresaleActive },
+  { label: "Completed", value: ExptStatus.Completed },
+  { label: "Presale Failed", value: ExptStatus.PresaleFailed },
 ];
 
 const STATUS_COLORS: Record<number, string> = {
-  0: colors.mutedForeground,
-  1: colors.warning,
-  2: colors.info,
-  3: colors.success,
-  4: colors.danger,
-  5: colors.danger,
+  [ExptStatus.Created]: colors.mutedForeground,
+  [ExptStatus.PresaleActive]: colors.warning,
+  [ExptStatus.Active]: colors.info,
+  [ExptStatus.Completed]: colors.success,
+  [ExptStatus.PresaleFailed]: colors.danger,
 };
 
 export default function BrowseScreen() {
   const router = useRouter();
-  const [experiments, setExperiments] = useState<Experiment[]>([]);
+  const [experiments, setExperiments] = useState<ParsedExptConfig[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [activeFilter, setActiveFilter] = useState<number | undefined>(
+  const [activeFilter, setActiveFilter] = useState<ExptStatus | undefined>(
     undefined
   );
 
-  const load = useCallback(async (status?: number) => {
+  const load = useCallback(async () => {
     try {
-      const data = await fetchExperiments(status);
+      const data = await fetchExperiments();
       setExperiments(data);
     } catch (err) {
       console.error("Failed to fetch experiments:", err);
@@ -54,24 +53,30 @@ export default function BrowseScreen() {
 
   useEffect(() => {
     setLoading(true);
-    load(activeFilter).finally(() => setLoading(false));
-  }, [activeFilter, load]);
+    load().finally(() => setLoading(false));
+  }, [load]);
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
-    await load(activeFilter);
+    await load();
     setRefreshing(false);
-  }, [activeFilter, load]);
+  }, [load]);
 
-  const renderExperiment = ({ item }: { item: Experiment }) => {
-    const treasury = lamportsToSol(item.total_treasury_received);
-    const statusColor = STATUS_COLORS[item.status] || colors.mutedForeground;
+  // Client-side filter
+  const filtered =
+    activeFilter !== undefined
+      ? experiments.filter((e) => e.status === activeFilter)
+      : experiments;
+
+  const renderExperiment = ({ item }: { item: ParsedExptConfig }) => {
+    const treasury = lamportsToSol(item.totalTreasuryReceived);
+    const statusColor = STATUS_COLORS[item.status] ?? colors.mutedForeground;
 
     return (
       <TouchableOpacity
         style={styles.card}
         activeOpacity={0.7}
-        onPress={() => router.push(`/experiment/${item.address}`)}
+        onPress={() => router.push(`/experiment/${item.address.toBase58()}`)}
       >
         <View style={styles.cardHeader}>
           <Text style={styles.cardTitle} numberOfLines={1}>
@@ -79,7 +84,7 @@ export default function BrowseScreen() {
           </Text>
           <View style={[styles.badge, { borderColor: statusColor }]}>
             <Text style={[styles.badgeText, { color: statusColor }]}>
-              {statusLabel(item.status)}
+              {item.statusLabel}
             </Text>
           </View>
         </View>
@@ -93,11 +98,13 @@ export default function BrowseScreen() {
           </View>
           <View style={styles.stat}>
             <Text style={styles.statLabel}>Milestones</Text>
-            <Text style={styles.statValue}>{item.milestone_count}</Text>
+            <Text style={styles.statValue}>{item.milestoneCount}</Text>
           </View>
           <View style={styles.stat}>
-            <Text style={styles.statLabel}>Veto BPS</Text>
-            <Text style={styles.statValue}>{item.veto_threshold_bps}</Text>
+            <Text style={styles.statLabel}>Veto</Text>
+            <Text style={styles.statValue}>
+              {item.vetoThresholdPercent}%
+            </Text>
           </View>
         </View>
       </TouchableOpacity>
@@ -138,8 +145,8 @@ export default function BrowseScreen() {
         />
       ) : (
         <FlatList
-          data={experiments}
-          keyExtractor={(item) => item.address}
+          data={filtered}
+          keyExtractor={(item) => item.address.toBase58()}
           renderItem={renderExperiment}
           contentContainerStyle={styles.list}
           refreshControl={

@@ -1,20 +1,18 @@
 /**
  * Mobile Wallet Adapter (MWA) utilities for Solana Seeker / Saga.
  *
- * Provides wallet connection, signing, and transaction sending
- * via the Solana Mobile wallet standard.
+ * Gracefully handles missing native module (e.g. when running in Expo Go
+ * on iOS simulator where MWA isn't available). Falls back to a stub that
+ * shows an alert.
  */
 
-import {
-  transact,
-  Web3MobileWallet,
-} from "@solana-mobile/mobile-wallet-adapter-protocol-web3js";
 import {
   Connection,
   PublicKey,
   Transaction,
   clusterApiUrl,
 } from "@solana/web3.js";
+import { Alert, Platform } from "react-native";
 
 const RPC_URL =
   process.env.EXPO_PUBLIC_SOLANA_RPC_URL || clusterApiUrl("devnet");
@@ -34,11 +32,38 @@ export function getConnection(): Connection {
 }
 
 /**
+ * Check if MWA is available (requires physical Android device with wallet app).
+ */
+function isMwaAvailable(): boolean {
+  if (Platform.OS !== "android") return false;
+  try {
+    require("@solana-mobile/mobile-wallet-adapter-protocol-web3js");
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Connect to a mobile wallet and return the public key.
+ * Shows an alert if MWA is not available (iOS / Expo Go).
  */
 export async function connectWallet(): Promise<PublicKey | null> {
+  if (!isMwaAvailable()) {
+    Alert.alert(
+      "Wallet Not Available",
+      "Mobile Wallet Adapter requires a Solana wallet app on an Android device. " +
+      "You can test this on a Solana Saga or Seeker device.",
+      [{ text: "OK" }]
+    );
+    return null;
+  }
+
   try {
-    const result = await transact(async (wallet: Web3MobileWallet) => {
+    const { transact } =
+      require("@solana-mobile/mobile-wallet-adapter-protocol-web3js");
+
+    const result = await transact(async (wallet: any) => {
       const { accounts } = await wallet.authorize({
         cluster: "devnet",
         identity: APP_IDENTITY,
@@ -59,27 +84,32 @@ export async function connectWallet(): Promise<PublicKey | null> {
 export async function signAndSendTransaction(
   transaction: Transaction
 ): Promise<string | null> {
+  if (!isMwaAvailable()) {
+    Alert.alert("Wallet Not Available", "MWA requires an Android device.");
+    return null;
+  }
+
   try {
+    const { transact } =
+      require("@solana-mobile/mobile-wallet-adapter-protocol-web3js");
     const conn = getConnection();
     const { blockhash, lastValidBlockHeight } =
       await conn.getLatestBlockhash();
     transaction.recentBlockhash = blockhash;
     transaction.lastValidBlockHeight = lastValidBlockHeight;
 
-    const signature = await transact(
-      async (wallet: Web3MobileWallet) => {
-        await wallet.authorize({
-          cluster: "devnet",
-          identity: APP_IDENTITY,
-        });
+    const signature = await transact(async (wallet: any) => {
+      await wallet.authorize({
+        cluster: "devnet",
+        identity: APP_IDENTITY,
+      });
 
-        const signedTxs = await wallet.signAndSendTransactions({
-          transactions: [transaction],
-        });
+      const signedTxs = await wallet.signAndSendTransactions({
+        transactions: [transaction],
+      });
 
-        return signedTxs[0];
-      }
-    );
+      return signedTxs[0];
+    });
 
     if (signature) {
       await conn.confirmTransaction(

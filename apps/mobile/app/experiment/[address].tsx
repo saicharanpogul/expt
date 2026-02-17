@@ -9,24 +9,33 @@ import {
 import { useLocalSearchParams } from "expo-router";
 import {
   fetchExperiment,
-  statusLabel,
-  milestoneStatusLabel,
   lamportsToSol,
-  type Experiment,
+  ExptStatus,
+  MilestoneStatus,
+  type ParsedExptConfig,
+  type ParsedMilestone,
 } from "../../lib/api";
 import { colors, spacing, radius, fonts } from "../../lib/theme";
 
-const MILESTONE_STATUS_COLORS: Record<number, string> = {
-  0: colors.mutedForeground,
-  1: colors.warning,
-  3: "#D32F2F",
-  4: colors.success,
-  5: colors.danger,
+const STATUS_COLORS: Record<number, string> = {
+  [ExptStatus.Created]: colors.mutedForeground,
+  [ExptStatus.PresaleActive]: colors.warning,
+  [ExptStatus.Active]: colors.info,
+  [ExptStatus.Completed]: colors.success,
+  [ExptStatus.PresaleFailed]: colors.danger,
+};
+
+const MS_STATUS_COLORS: Record<number, string> = {
+  [MilestoneStatus.Pending]: colors.mutedForeground,
+  [MilestoneStatus.Submitted]: colors.warning,
+  [MilestoneStatus.Challenged]: "#D32F2F",
+  [MilestoneStatus.Passed]: colors.success,
+  [MilestoneStatus.Failed]: colors.danger,
 };
 
 export default function ExperimentDetailScreen() {
   const { address } = useLocalSearchParams<{ address: string }>();
-  const [experiment, setExperiment] = useState<Experiment | null>(null);
+  const [experiment, setExperiment] = useState<ParsedExptConfig | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -54,41 +63,18 @@ export default function ExperimentDetailScreen() {
     );
   }
 
-  const treasury = lamportsToSol(experiment.total_treasury_received);
-  const claimed = lamportsToSol(experiment.total_claimed_by_builder);
+  const treasury = lamportsToSol(experiment.totalTreasuryReceived);
+  const claimed = lamportsToSol(experiment.totalClaimedByBuilder);
+  const statusColor = STATUS_COLORS[experiment.status] ?? colors.mutedForeground;
 
   return (
     <ScrollView style={styles.container}>
       {/* Header */}
       <View style={styles.header}>
         <Text style={styles.title}>{experiment.name}</Text>
-        <View
-          style={[
-            styles.badge,
-            {
-              borderColor:
-                experiment.status === 2
-                  ? colors.info
-                  : experiment.status === 3
-                  ? colors.success
-                  : colors.mutedForeground,
-            },
-          ]}
-        >
-          <Text
-            style={[
-              styles.badgeText,
-              {
-                color:
-                  experiment.status === 2
-                    ? colors.info
-                    : experiment.status === 3
-                    ? colors.success
-                    : colors.mutedForeground,
-              },
-            ]}
-          >
-            {statusLabel(experiment.status)}
+        <View style={[styles.badge, { borderColor: statusColor }]}>
+          <Text style={[styles.badgeText, { color: statusColor }]}>
+            {experiment.statusLabel}
           </Text>
         </View>
       </View>
@@ -106,12 +92,12 @@ export default function ExperimentDetailScreen() {
         <View style={styles.statCard}>
           <Text style={styles.statLabel}>Pool</Text>
           <Text style={styles.statValue}>
-            {experiment.pool_launched ? "✅ Launched" : "⏳ Pending"}
+            {experiment.poolLaunched ? "✅ Launched" : "⏳ Pending"}
           </Text>
         </View>
         <View style={styles.statCard}>
           <Text style={styles.statLabel}>Milestones</Text>
-          <Text style={styles.statValue}>{experiment.milestone_count}</Text>
+          <Text style={styles.statValue}>{experiment.milestoneCount}</Text>
         </View>
       </View>
 
@@ -121,21 +107,21 @@ export default function ExperimentDetailScreen() {
         <View style={styles.detailRow}>
           <Text style={styles.detailLabel}>Builder</Text>
           <Text style={styles.mono}>
-            {experiment.builder_wallet.slice(0, 6)}...
-            {experiment.builder_wallet.slice(-4)}
+            {experiment.builder.toBase58().slice(0, 6)}...
+            {experiment.builder.toBase58().slice(-4)}
           </Text>
         </View>
         <View style={styles.detailRow}>
           <Text style={styles.detailLabel}>Mint</Text>
           <Text style={styles.mono}>
-            {experiment.mint.slice(0, 6)}...
-            {experiment.mint.slice(-4)}
+            {experiment.mint.toBase58().slice(0, 6)}...
+            {experiment.mint.toBase58().slice(-4)}
           </Text>
         </View>
         <View style={styles.detailRow}>
           <Text style={styles.detailLabel}>Veto Threshold</Text>
           <Text style={styles.mono}>
-            {experiment.veto_threshold_bps} bps
+            {experiment.vetoThresholdPercent}%
           </Text>
         </View>
       </View>
@@ -143,10 +129,10 @@ export default function ExperimentDetailScreen() {
       {/* Milestones */}
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Milestones</Text>
-        {(experiment.milestones || []).map((ms) => {
+        {experiment.milestones.map((ms: ParsedMilestone) => {
           const msColor =
-            MILESTONE_STATUS_COLORS[ms.status] || colors.mutedForeground;
-          const vetoStake = lamportsToSol(ms.total_veto_stake);
+            MS_STATUS_COLORS[ms.status] ?? colors.mutedForeground;
+          const vetoStake = lamportsToSol(ms.totalVetoStake);
 
           return (
             <View key={ms.index} style={styles.milestoneCard}>
@@ -154,7 +140,7 @@ export default function ExperimentDetailScreen() {
                 <Text style={styles.milestoneIndex}>#{ms.index + 1}</Text>
                 <View style={[styles.msBadge, { borderColor: msColor }]}>
                   <Text style={[styles.msBadgeText, { color: msColor }]}>
-                    {milestoneStatusLabel(ms.status)}
+                    {ms.statusLabel}
                   </Text>
                 </View>
               </View>
@@ -163,7 +149,7 @@ export default function ExperimentDetailScreen() {
               </Text>
               <View style={styles.milestoneStats}>
                 <Text style={styles.msStat}>
-                  Unlock: {ms.unlock_percent}%
+                  Unlock: {ms.unlockPercent}%
                 </Text>
                 {vetoStake > 0 && (
                   <Text style={[styles.msStat, { color: colors.danger }]}>
@@ -171,11 +157,14 @@ export default function ExperimentDetailScreen() {
                   </Text>
                 )}
               </View>
-              {ms.deliverable && (
-                <Text style={[styles.mono, { marginTop: 4 }]} numberOfLines={1}>
+              {ms.deliverable ? (
+                <Text
+                  style={[styles.mono, { marginTop: 4 }]}
+                  numberOfLines={1}
+                >
                   📎 {ms.deliverable}
                 </Text>
-              )}
+              ) : null}
             </View>
           );
         })}

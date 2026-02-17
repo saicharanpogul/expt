@@ -11,18 +11,16 @@ import {
 import { useRouter } from "expo-router";
 import { connectWallet } from "../../lib/wallet";
 import {
-  fetchBuilder,
-  statusLabel,
+  fetchExperimentsByBuilder,
   lamportsToSol,
-  type Builder,
-  type Experiment,
+  type ParsedExptConfig,
 } from "../../lib/api";
 import { colors, spacing, radius, fonts } from "../../lib/theme";
 
 export default function ProfileScreen() {
   const router = useRouter();
   const [wallet, setWallet] = useState<string | null>(null);
-  const [builder, setBuilder] = useState<Builder | null>(null);
+  const [experiments, setExperiments] = useState<ParsedExptConfig[]>([]);
   const [loading, setLoading] = useState(false);
 
   const handleConnect = useCallback(async () => {
@@ -33,9 +31,9 @@ export default function ProfileScreen() {
         const walletAddr = pubkey.toBase58();
         setWallet(walletAddr);
 
-        // Fetch builder profile from indexer
-        const b = await fetchBuilder(walletAddr);
-        setBuilder(b);
+        // Fetch builder's experiments from RPC
+        const expts = await fetchExperimentsByBuilder(walletAddr);
+        setExperiments(expts);
       } else {
         Alert.alert("Connection Failed", "Could not connect to wallet.");
       }
@@ -70,36 +68,20 @@ export default function ProfileScreen() {
     );
   }
 
-  // ── Connected but no builder profile ──────────────────────────
-  if (!builder) {
-    return (
-      <View style={styles.center}>
-        <Text style={styles.emoji}>🔬</Text>
-        <Text style={styles.title}>No Builder Profile</Text>
-        <Text style={styles.subtitle}>
-          Connected as {wallet.slice(0, 4)}...{wallet.slice(-4)}
-        </Text>
-        <Text style={[styles.subtitle, { marginTop: 4 }]}>
-          Create a Builder profile on expt.fun to start building!
-        </Text>
-      </View>
-    );
-  }
-
-  // ── Builder profile ───────────────────────────────────────────
-  const renderExperiment = ({ item }: { item: Experiment }) => (
+  // ── Connected ─────────────────────────────────────────────────
+  const renderExperiment = ({ item }: { item: ParsedExptConfig }) => (
     <TouchableOpacity
       style={styles.card}
       activeOpacity={0.7}
-      onPress={() => router.push(`/experiment/${item.address}`)}
+      onPress={() => router.push(`/experiment/${item.address.toBase58()}`)}
     >
       <Text style={styles.cardTitle} numberOfLines={1}>
         {item.name}
       </Text>
       <View style={styles.cardRow}>
-        <Text style={styles.cardLabel}>{statusLabel(item.status)}</Text>
+        <Text style={styles.cardLabel}>{item.statusLabel}</Text>
         <Text style={styles.cardValue}>
-          {lamportsToSol(item.total_treasury_received).toFixed(2)} SOL
+          {lamportsToSol(item.totalTreasuryReceived).toFixed(2)} SOL
         </Text>
       </View>
     </TouchableOpacity>
@@ -111,7 +93,7 @@ export default function ProfileScreen() {
       <View style={styles.profileHeader}>
         <Text style={styles.profileEmoji}>👤</Text>
         <View style={styles.profileInfo}>
-          <Text style={styles.profileName}>@{builder.x_username}</Text>
+          <Text style={styles.profileName}>Builder</Text>
           <Text style={styles.profileWallet}>
             {wallet.slice(0, 6)}...{wallet.slice(-4)}
           </Text>
@@ -121,28 +103,16 @@ export default function ProfileScreen() {
       {/* Stats row */}
       <View style={styles.statsRow}>
         <View style={styles.statItem}>
-          <Text style={styles.statNumber}>{builder.experiment_count}</Text>
+          <Text style={styles.statNumber}>{experiments.length}</Text>
           <Text style={styles.statLabel}>Experiments</Text>
         </View>
-        {builder.github && (
-          <View style={styles.statItem}>
-            <Text style={styles.statNumber}>🐙</Text>
-            <Text style={styles.statLabel}>{builder.github}</Text>
-          </View>
-        )}
-        {builder.telegram && (
-          <View style={styles.statItem}>
-            <Text style={styles.statNumber}>✈️</Text>
-            <Text style={styles.statLabel}>{builder.telegram}</Text>
-          </View>
-        )}
       </View>
 
       {/* Experiments list */}
       <Text style={styles.sectionTitle}>Your Experiments</Text>
       <FlatList
-        data={builder.experiments || []}
-        keyExtractor={(item) => item.address}
+        data={experiments}
+        keyExtractor={(item) => item.address.toBase58()}
         renderItem={renderExperiment}
         contentContainerStyle={styles.list}
         ListEmptyComponent={
