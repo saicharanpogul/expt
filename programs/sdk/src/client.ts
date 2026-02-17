@@ -16,6 +16,7 @@ import {
 } from "./constants";
 import {
   deriveExptConfigPda,
+  deriveBuilderPda,
   deriveTreasuryPda,
   deriveVetoStakePda,
   deriveEscrowPda,
@@ -28,14 +29,17 @@ import {
   type ParsedExptConfig,
   type ParsedPresaleState,
   type ParsedVetoStake,
+  type ParsedBuilder,
   type RawExptConfig,
   type RawVetoStake,
+  type RawBuilder,
   buildCreateExptConfigArgs,
   buildInitializePresaleFromTreasuryArgs,
   buildSubmitMilestoneArgs,
   parseExptConfig,
   parsePresaleState,
   parseVetoStake,
+  parseBuilder,
 } from "./types";
 
 // ---------------------------------------------------------------------------
@@ -69,6 +73,10 @@ export class ExptClient {
     milestoneIndex: number
   ): [PublicKey, number] {
     return deriveVetoStakePda(exptConfig, staker, milestoneIndex, this.programId);
+  }
+
+  deriveBuilderPda(wallet: PublicKey): [PublicKey, number] {
+    return deriveBuilderPda(wallet, this.programId);
   }
 
   // -----------------------------------------------------------------------
@@ -123,7 +131,50 @@ export class ExptClient {
   }
 
   // -----------------------------------------------------------------------
-  // Instruction builders
+  // Builder methods
+  // -----------------------------------------------------------------------
+
+  /**
+   * Fetch and parse a Builder account by wallet address.
+   */
+  async fetchBuilder(wallet: PublicKey): Promise<ParsedBuilder | null> {
+    const [pda] = this.deriveBuilderPda(wallet);
+    try {
+      const raw = await (this.program.account as any).builder.fetch(pda);
+      return parseBuilder(raw as RawBuilder, pda);
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Create a builder profile.
+   * Must be called before createExptConfig.
+   */
+  async createBuilder(
+    wallet: PublicKey,
+    xUsername: string,
+    github?: string,
+    telegram?: string,
+  ): Promise<TransactionInstruction> {
+    const [builderPda] = this.deriveBuilderPda(wallet);
+
+    return await (this.program.methods as any)
+      .createBuilder({
+        xUsername,
+        github: github ?? null,
+        telegram: telegram ?? null,
+      })
+      .accounts({
+        wallet,
+        builder: builderPda,
+        systemProgram: SystemProgram.programId,
+      })
+      .instruction();
+  }
+
+  // -----------------------------------------------------------------------
+  // Experiment methods
   // -----------------------------------------------------------------------
 
   /**
@@ -139,6 +190,7 @@ export class ExptClient {
   ): Promise<TransactionInstruction> {
     const [exptConfigPda] = this.deriveExptConfigPda(builder, mint);
     const [treasuryPda] = this.deriveTreasuryPda(exptConfigPda);
+    const [builderPda] = this.deriveBuilderPda(builder);
     const args = buildCreateExptConfigArgs(input);
 
     // Derive treasury's ATA for the new mint
@@ -151,6 +203,7 @@ export class ExptClient {
       .createExptConfig(args)
       .accounts({
         builder,
+        builderProfile: builderPda,
         exptConfig: exptConfigPda,
         treasury: treasuryPda,
         mint,
@@ -307,6 +360,32 @@ export class ExptClient {
       .accounts({
         payer,
         exptConfig,
+      })
+      .instruction();
+  }
+
+  /**
+   * Settle a veto stake after milestone resolution.
+   * If milestone passed → stake burned (stays in treasury).
+   * If milestone failed → stake returned to vetoer.
+   * VetoStake account is closed in both cases.
+   */
+  async settleVetoStake(
+    staker: PublicKey,
+    exptConfig: PublicKey,
+    milestoneIndex: number
+  ): Promise<TransactionInstruction> {
+    const [vetoStakePda] = this.deriveVetoStakePda(exptConfig, staker, milestoneIndex);
+    const [treasuryPda] = this.deriveTreasuryPda(exptConfig);
+
+    return await (this.program.methods as any)
+      .settleVetoStake({ milestoneIndex })
+      .accounts({
+        staker,
+        exptConfig,
+        vetoStake: vetoStakePda,
+        treasury: treasuryPda,
+        systemProgram: SystemProgram.programId,
       })
       .instruction();
   }

@@ -23,6 +23,20 @@ export function deriveExptConfigPda(
 }
 
 /**
+ * Derive the Builder PDA for a given wallet.
+ * Seeds: [b"builder", wallet.key()]
+ */
+export function deriveBuilderPda(
+  wallet: PublicKey,
+  programId: PublicKey = EXPT_PROGRAM_ID
+): [PublicKey, number] {
+  return PublicKey.findProgramAddressSync(
+    [SEEDS.BUILDER, wallet.toBuffer()],
+    programId
+  );
+}
+
+/**
  * Derive the Treasury PDA for a given ExptConfig.
  * Seeds: [b"treasury", expt_config.key()]
  */

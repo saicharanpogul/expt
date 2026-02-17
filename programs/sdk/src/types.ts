@@ -29,6 +29,14 @@ export enum MilestoneStatus {
 }
 
 // ---------------------------------------------------------------------------
+// Builder constants (must match on-chain builder.rs)
+// ---------------------------------------------------------------------------
+
+export const MAX_X_USERNAME_LEN = 32;
+export const MAX_GITHUB_LEN = 64;
+export const MAX_TELEGRAM_LEN = 32;
+
+// ---------------------------------------------------------------------------
 // Human-readable label helpers
 // ---------------------------------------------------------------------------
 
@@ -133,6 +141,7 @@ export interface ParsedMilestone {
 export interface ParsedExptConfig {
   address: PublicKey;
   builder: PublicKey;
+  builderPda: PublicKey;
   name: string;
   uri: string;
   presale: PublicKey;
@@ -154,6 +163,17 @@ export interface ParsedExptConfig {
   positionNftMint: PublicKey;
   lpPosition: PublicKey;
   totalSupply: BN;
+}
+
+export interface ParsedBuilder {
+  address: PublicKey;
+  wallet: PublicKey;
+  xUsername: string;
+  github: string;
+  telegram: string;
+  activeExperiment: PublicKey;
+  experimentCount: number;
+  createdAt: Date;
 }
 
 export interface ParsedVetoStake {
@@ -202,6 +222,18 @@ export interface RawExptConfig {
   positionNftMint: PublicKey;
   lpPosition: PublicKey;
   totalSupply: BN;
+  builderPda: PublicKey;
+  // padding fields omitted
+}
+
+export interface RawBuilder {
+  wallet: PublicKey;
+  xUsername: number[];
+  github: number[];
+  telegram: number[];
+  activeExperiment: PublicKey;
+  experimentCount: number;
+  createdAt: BN;
   // padding fields omitted
 }
 
@@ -261,6 +293,7 @@ export function parseExptConfig(
   return {
     address,
     builder: raw.builder,
+    builderPda: raw.builderPda,
     name: bytesToString(raw.name),
     uri: bytesToString(raw.uri),
     presale: raw.presale,
@@ -282,6 +315,25 @@ export function parseExptConfig(
     positionNftMint: raw.positionNftMint,
     lpPosition: raw.lpPosition,
     totalSupply: raw.totalSupply,
+  };
+}
+
+/**
+ * Parse a raw Builder from Anchor deserialization into a readable format.
+ */
+export function parseBuilder(
+  raw: RawBuilder,
+  address: PublicKey
+): ParsedBuilder {
+  return {
+    address,
+    wallet: raw.wallet,
+    xUsername: bytesToString(raw.xUsername),
+    github: bytesToString(raw.github),
+    telegram: bytesToString(raw.telegram),
+    activeExperiment: raw.activeExperiment,
+    experimentCount: raw.experimentCount,
+    createdAt: new Date(raw.createdAt.toNumber() * 1000),
   };
 }
 

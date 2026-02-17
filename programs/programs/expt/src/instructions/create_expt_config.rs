@@ -41,6 +41,15 @@ pub struct CreateExptConfigCtx<'info> {
     #[account(mut)]
     pub builder: Signer<'info>,
 
+    /// Builder PDA — must exist and belong to this builder
+    #[account(
+        mut,
+        seeds = [seeds::BUILDER_PREFIX, builder.key().as_ref()],
+        bump,
+        constraint = builder_profile.load()?.wallet == builder.key() @ ExptError::Unauthorized,
+    )]
+    pub builder_profile: AccountLoader<'info, Builder>,
+
     /// ExptConfig PDA — unique per builder+mint pair
     #[account(
         init,
@@ -88,6 +97,15 @@ pub fn handle_create_expt_config(
     ctx: Context<CreateExptConfigCtx>,
     args: CreateExptConfigArgs,
 ) -> Result<()> {
+    // 0. Enforce single active experiment per builder
+    {
+        let builder_profile = ctx.accounts.builder_profile.load()?;
+        require!(
+            !builder_profile.has_active_experiment(),
+            ExptError::BuilderAlreadyHasExperiment
+        );
+    }
+
     // 1. Validate milestone count
     let milestone_count = args.milestones.len();
     require!(
@@ -120,6 +138,7 @@ pub fn handle_create_expt_config(
     // 7. Initialize the ExptConfig
     let mut config = ctx.accounts.expt_config.load_init()?;
     config.builder = ctx.accounts.builder.key();
+    config.builder_pda = ctx.accounts.builder_profile.key();
     config.name = args.name;
     config.uri = args.uri;
     config.presale = Pubkey::default(); // Set later by initialize_presale_from_treasury
@@ -198,6 +217,16 @@ pub fn handle_create_expt_config(
         veto_threshold_bps: args.veto_threshold_bps,
         challenge_window: args.challenge_window,
     });
+
+    // 12. Update Builder PDA — set active experiment and increment count
+    {
+        let mut builder_profile = ctx.accounts.builder_profile.load_mut()?;
+        builder_profile.active_experiment = ctx.accounts.expt_config.key();
+        builder_profile.experiment_count = builder_profile
+            .experiment_count
+            .checked_add(1)
+            .ok_or(ExptError::MathOverflow)?;
+    }
 
     Ok(())
 }

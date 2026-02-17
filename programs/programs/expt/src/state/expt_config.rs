@@ -139,13 +139,15 @@ pub struct ExptConfig {
     pub lp_position: Pubkey,
     /// Total token supply minted during experiment creation
     pub total_supply: u64,
+    /// Builder PDA address (set during create_expt_config)
+    pub builder_pda: Pubkey,
     /// Reserved for future use
     pub padding: [u8; 24],
 }
 
 // ExptConfig size:
-// 32 + 32 + 200 + 32 + 32 + 1 + 1 + 1 + 1 + 1 + 3 + 8 + 8 + 8 + 2 + 6 + 8 + (408*3) + 32 + 32 + 32 + 8 + 24 = 1728
-const _: () = assert!(std::mem::size_of::<ExptConfig>() == 1728);
+// 32 + 32 + 200 + 32 + 32 + 1 + 1 + 1 + 1 + 1 + 3 + 8 + 8 + 8 + 2 + 6 + 8 + (408*3) + 32 + 32 + 32 + 8 + 32 + 24 = 1760
+const _: () = assert!(std::mem::size_of::<ExptConfig>() == 1760);
 
 impl ExptConfig {
     pub const SPACE: usize = 8 + std::mem::size_of::<ExptConfig>();

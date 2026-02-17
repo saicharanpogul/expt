@@ -242,10 +242,78 @@
       "args": []
     },
     {
+      "name": "create_builder",
+      "docs": [
+        "Create a builder profile with identity info.",
+        "Must be called before create_expt_config."
+      ],
+      "discriminator": [
+        68,
+        113,
+        204,
+        223,
+        20,
+        2,
+        215,
+        207
+      ],
+      "accounts": [
+        {
+          "name": "wallet",
+          "docs": [
+            "Builder wallet"
+          ],
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "builder",
+          "docs": [
+            "Builder PDA — unique per wallet"
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  98,
+                  117,
+                  105,
+                  108,
+                  100,
+                  101,
+                  114
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "wallet"
+              }
+            ]
+          }
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "args",
+          "type": {
+            "defined": {
+              "name": "CreateBuilderArgs"
+            }
+          }
+        }
+      ]
+    },
+    {
       "name": "create_expt_config",
       "docs": [
         "Create a new experiment with presale parameters and milestones.",
-        "One active experiment per builder wallet."
+        "Requires an existing Builder PDA. One active experiment per builder wallet."
       ],
       "discriminator": [
         8,
@@ -265,6 +333,33 @@
           ],
           "writable": true,
           "signer": true
+        },
+        {
+          "name": "builder_profile",
+          "docs": [
+            "Builder PDA — must exist and belong to this builder"
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  98,
+                  117,
+                  105,
+                  108,
+                  100,
+                  101,
+                  114
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "builder"
+              }
+            ]
+          }
         },
         {
           "name": "expt_config",
@@ -1019,6 +1114,90 @@
       ]
     },
     {
+      "name": "settle_veto_stake",
+      "docs": [
+        "Settle a veto stake after milestone resolution.",
+        "If milestone passed → stake burned (stays in treasury).",
+        "If milestone failed → stake returned to vetoer.",
+        "VetoStake account is closed in both cases."
+      ],
+      "discriminator": [
+        81,
+        33,
+        154,
+        103,
+        166,
+        222,
+        1,
+        129
+      ],
+      "accounts": [
+        {
+          "name": "staker",
+          "docs": [
+            "The staker getting their stake settled"
+          ],
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "expt_config",
+          "docs": [
+            "ExptConfig PDA (immutable — only reads milestone status)"
+          ]
+        },
+        {
+          "name": "veto_stake",
+          "docs": [
+            "VetoStake PDA — will be closed after settlement"
+          ],
+          "writable": true
+        },
+        {
+          "name": "treasury",
+          "docs": [
+            "Treasury PDA — sends SOL back to staker if milestone failed"
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  116,
+                  114,
+                  101,
+                  97,
+                  115,
+                  117,
+                  114,
+                  121
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "expt_config"
+              }
+            ]
+          }
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "args",
+          "type": {
+            "defined": {
+              "name": "SettleVetoStakeArgs"
+            }
+          }
+        }
+      ]
+    },
+    {
       "name": "submit_milestone",
       "docs": [
         "Builder submits proof for a milestone, opening the challenge window."
@@ -1281,6 +1460,19 @@
   ],
   "accounts": [
     {
+      "name": "Builder",
+      "discriminator": [
+        241,
+        159,
+        216,
+        96,
+        63,
+        14,
+        177,
+        127
+      ]
+    },
+    {
       "name": "ExptConfig",
       "discriminator": [
         220,
@@ -1308,6 +1500,19 @@
     }
   ],
   "events": [
+    {
+      "name": "EvtBuilderCreated",
+      "discriminator": [
+        197,
+        231,
+        232,
+        70,
+        213,
+        40,
+        182,
+        35
+      ]
+    },
     {
       "name": "EvtBuilderFundsClaimed",
       "discriminator": [
@@ -1586,9 +1791,162 @@
       "code": 6031,
       "name": "InsufficientTreasuryBalance",
       "msg": "Insufficient token balance in treasury"
+    },
+    {
+      "code": 6032,
+      "name": "MissingXUsername",
+      "msg": "X (Twitter) username is required"
+    },
+    {
+      "code": 6033,
+      "name": "BuilderAlreadyHasExperiment",
+      "msg": "Builder already has an active experiment"
     }
   ],
   "types": [
+    {
+      "name": "Builder",
+      "docs": [
+        "Builder profile account.",
+        "PDA seeds: [b\"builder\", wallet.key()]",
+        "",
+        "Tracks builder identity (X mandatory, GitHub/Telegram optional)",
+        "and enforces one active experiment per wallet."
+      ],
+      "serialization": "bytemuck",
+      "repr": {
+        "kind": "c"
+      },
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "wallet",
+            "docs": [
+              "Builder wallet address"
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "x_username",
+            "docs": [
+              "X (Twitter) username — mandatory, UTF-8 null-padded"
+            ],
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "github",
+            "docs": [
+              "GitHub username — optional (zeroed if empty), UTF-8 null-padded"
+            ],
+            "type": {
+              "array": [
+                "u8",
+                64
+              ]
+            }
+          },
+          {
+            "name": "telegram",
+            "docs": [
+              "Telegram username — optional (zeroed if empty), UTF-8 null-padded"
+            ],
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "active_experiment",
+            "docs": [
+              "Active experiment's ExptConfig PDA (Pubkey::default if none)"
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "experiment_count",
+            "docs": [
+              "Total experiments created (used for enforcement: must be < 1)"
+            ],
+            "type": "u8"
+          },
+          {
+            "name": "_padding",
+            "docs": [
+              "Padding for alignment"
+            ],
+            "type": {
+              "array": [
+                "u8",
+                7
+              ]
+            }
+          },
+          {
+            "name": "created_at",
+            "docs": [
+              "When this builder profile was created (unix timestamp)"
+            ],
+            "type": "i64"
+          },
+          {
+            "name": "padding",
+            "docs": [
+              "Reserved for future use"
+            ],
+            "type": {
+              "array": [
+                "u8",
+                24
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "CreateBuilderArgs",
+      "docs": [
+        "Arguments for creating a builder profile"
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "x_username",
+            "docs": [
+              "X (Twitter) username — mandatory"
+            ],
+            "type": "string"
+          },
+          {
+            "name": "github",
+            "docs": [
+              "GitHub username — optional"
+            ],
+            "type": {
+              "option": "string"
+            }
+          },
+          {
+            "name": "telegram",
+            "docs": [
+              "Telegram username — optional"
+            ],
+            "type": {
+              "option": "string"
+            }
+          }
+        ]
+      }
+    },
     {
       "name": "CreateExptConfigArgs",
       "docs": [
@@ -1650,6 +2008,26 @@
               "Token decimals (typically 9)"
             ],
             "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "EvtBuilderCreated",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "builder",
+            "type": "pubkey"
+          },
+          {
+            "name": "wallet",
+            "type": "pubkey"
+          },
+          {
+            "name": "x_username",
+            "type": "string"
           }
         ]
       }
@@ -2104,6 +2482,13 @@
             "type": "u64"
           },
           {
+            "name": "builder_pda",
+            "docs": [
+              "Builder PDA address (set during create_expt_config)"
+            ],
+            "type": "pubkey"
+          },
+          {
             "name": "padding",
             "docs": [
               "Reserved for future use"
@@ -2185,53 +2570,11 @@
     {
       "name": "LaunchPoolArgs",
       "docs": [
-        "Arguments for launch_pool (passed by caller)"
+        "Arguments for launch_pool"
       ],
       "type": {
         "kind": "struct",
         "fields": [
-          {
-            "name": "token_a_amount",
-            "docs": [
-              "Amount of token A (Expt Coin) to add as liquidity"
-            ],
-            "type": "u64"
-          },
-          {
-            "name": "token_b_amount",
-            "docs": [
-              "Amount of token B (SOL/WSOL) to add as liquidity (75% of treasury)"
-            ],
-            "type": "u64"
-          },
-          {
-            "name": "liquidity",
-            "docs": [
-              "Pool liquidity (Q64.64 — computed off-chain)"
-            ],
-            "type": "u128"
-          },
-          {
-            "name": "sqrt_price",
-            "docs": [
-              "Initial sqrt price as Q64.64 — sqrt(token_b / token_a) << 64"
-            ],
-            "type": "u128"
-          },
-          {
-            "name": "sqrt_min_price",
-            "docs": [
-              "Min sqrt price (Q64.64) — use MIN_SQRT_PRICE (4295048016) for full range"
-            ],
-            "type": "u128"
-          },
-          {
-            "name": "sqrt_max_price",
-            "docs": [
-              "Max sqrt price (Q64.64) — use MAX_SQRT_PRICE (79226673521066979257578248091) for full range"
-            ],
-            "type": "u128"
-          },
           {
             "name": "activation_point",
             "docs": [
@@ -2415,6 +2758,18 @@
     },
     {
       "name": "ResolveMilestoneArgs",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "milestone_index",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "SettleVetoStakeArgs",
       "type": {
         "kind": "struct",
         "fields": [

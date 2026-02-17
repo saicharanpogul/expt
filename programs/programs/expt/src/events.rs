@@ -79,3 +79,10 @@ pub struct EvtPresaleFundsWithdrawn {
     pub treasury_amount: u64,
     pub lp_amount: u64,
 }
+
+#[event]
+pub struct EvtBuilderCreated {
+    pub builder: Pubkey,
+    pub wallet: Pubkey,
+    pub x_username: String,
+}

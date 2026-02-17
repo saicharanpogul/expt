@@ -16,6 +16,7 @@ export const SEEDS = {
   EXPT_CONFIG: Buffer.from("expt_config"),
   TREASURY: Buffer.from("treasury"),
   VETO_STAKE: Buffer.from("veto_stake"),
+  BUILDER: Buffer.from("builder"),
 } as const;
 
 // ---------------------------------------------------------------------------

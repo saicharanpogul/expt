@@ -30,4 +30,5 @@ pub mod seeds {
     pub const EXPT_CONFIG_PREFIX: &[u8] = b"expt_config";
     pub const TREASURY_PREFIX: &[u8] = b"treasury";
     pub const VETO_STAKE_PREFIX: &[u8] = b"veto_stake";
+    pub const BUILDER_PREFIX: &[u8] = b"builder";
 }

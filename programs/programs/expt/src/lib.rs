@@ -20,8 +20,17 @@ declare_id!("9EY3BccFR7QprDNFbZ2fqy5t6wzgpiAYg24mcjYu5nYw");
 pub mod expt {
     use super::*;
 
+    /// Create a builder profile with identity info.
+    /// Must be called before create_expt_config.
+    pub fn create_builder(
+        ctx: Context<CreateBuilderCtx>,
+        args: CreateBuilderArgs,
+    ) -> Result<()> {
+        instructions::handle_create_builder(ctx, args)
+    }
+
     /// Create a new experiment with presale parameters and milestones.
-    /// One active experiment per builder wallet.
+    /// Requires an existing Builder PDA. One active experiment per builder wallet.
     pub fn create_expt_config(
         ctx: Context<CreateExptConfigCtx>,
         args: CreateExptConfigArgs,
@@ -94,5 +103,16 @@ pub mod expt {
         args: InitPresaleFromTreasuryArgs,
     ) -> Result<()> {
         instructions::handle_initialize_presale_from_treasury(ctx, args)
+    }
+
+    /// Settle a veto stake after milestone resolution.
+    /// If milestone passed → stake burned (stays in treasury).
+    /// If milestone failed → stake returned to vetoer.
+    /// VetoStake account is closed in both cases.
+    pub fn settle_veto_stake(
+        ctx: Context<SettleVetoStakeCtx>,
+        args: SettleVetoStakeArgs,
+    ) -> Result<()> {
+        instructions::handle_settle_veto_stake(ctx, args)
     }
 }

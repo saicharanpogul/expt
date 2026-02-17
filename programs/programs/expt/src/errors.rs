@@ -98,4 +98,10 @@ pub enum ExptError {
 
     #[msg("Insufficient token balance in treasury")]
     InsufficientTreasuryBalance,
+
+    #[msg("X (Twitter) username is required")]
+    MissingXUsername,
+
+    #[msg("Builder already has an active experiment")]
+    BuilderAlreadyHasExperiment,
 }

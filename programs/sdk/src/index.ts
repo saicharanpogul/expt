@@ -31,6 +31,7 @@ export {
 // PDA derivation
 export {
   deriveExptConfigPda,
+  deriveBuilderPda,
   deriveTreasuryPda,
   deriveVetoStakePda,
   derivePresalePda,
@@ -57,6 +58,7 @@ export {
   parseMilestone,
   parseVetoStake,
   parsePresaleState,
+  parseBuilder,
   buildCreateExptConfigArgs,
   buildSubmitMilestoneArgs,
 } from "./types";
@@ -67,9 +69,11 @@ export type {
   ParsedMilestone,
   ParsedVetoStake,
   ParsedPresaleState,
+  ParsedBuilder,
   RawExptConfig,
   RawMilestone,
   RawVetoStake,
+  RawBuilder,
   CreateExptConfigInput,
   InitializePresaleFromTreasuryInput,
   SubmitMilestoneInput,

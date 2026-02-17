@@ -449,9 +449,38 @@ async function main() {
   info(`Presale Authority: ${presaleAuthorityPda.toBase58()}`);
 
   // -----------------------------------------------------------------------
-  // Phase 1: Create ExptConfig (on-chain mint creation)
+  // Phase 1A: Create Builder Profile
   // -----------------------------------------------------------------------
-  console.log("\n🔧 Phase 1: Create ExptConfig (On-Chain Mint)\n");
+  console.log("\n👤 Phase 1A: Create Builder Profile\n");
+
+  try {
+    const ix = await client.createBuilder(
+      builder.publicKey,
+      "expt_builder",       // X username (mandatory)
+      "expt-labs",          // GitHub (optional)
+      "expt_community"      // Telegram (optional)
+    );
+    const tx = new Transaction().add(ix);
+    await sendAndConfirmTransaction(connection, tx, [builder], { commitment: "confirmed" });
+    ok("Builder profile created");
+  } catch (e: any) {
+    console.error("Create builder error:", e.logs || e.message);
+    fail("Failed to create Builder profile");
+  }
+
+  // Verify builder profile
+  const builderProfile = await client.fetchBuilder(builder.publicKey);
+  if (!builderProfile) fail("Builder profile not found after creation");
+  info(`Builder X: ${builderProfile.xUsername} (should be 'expt_builder')`);
+  info(`Builder GitHub: ${builderProfile.github} (should be 'expt-labs')`);
+  info(`Builder Telegram: ${builderProfile.telegram} (should be 'expt_community')`);
+  info(`Active Experiment: ${builderProfile.activeExperiment.toBase58()} (should be default)`);
+  info(`Experiment Count: ${builderProfile.experimentCount} (should be 0)`);
+
+  // -----------------------------------------------------------------------
+  // Phase 1B: Create ExptConfig (on-chain mint creation)
+  // -----------------------------------------------------------------------
+  console.log("\n🔧 Phase 1B: Create ExptConfig (On-Chain Mint)\n");
 
   // Get current time for milestone deadlines
   const currentSlot2 = await connection.getSlot();
@@ -505,6 +534,12 @@ async function main() {
     console.error("Create expt error:", e.logs || e.message);
     fail("Failed to create ExptConfig");
   }
+
+  // Verify Builder profile updated
+  const builderProfileAfter = await client.fetchBuilder(builder.publicKey);
+  if (!builderProfileAfter) fail("Builder profile not found after experiment creation");
+  info(`Active Experiment: ${builderProfileAfter.activeExperiment.toBase58()} (should match exptConfigPda)`);
+  info(`Experiment Count: ${builderProfileAfter.experimentCount} (should be 1)`);
 
   // Verify initial state
   const config1 = await client.fetchExptConfig(builder.publicKey, presaleMint);
