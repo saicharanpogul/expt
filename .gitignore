@@ -8,5 +8,8 @@ BRAND_GUIDE.md
 UXUX_GUIDE.md
 TOKENOMICS.md
 
+# env files
+apps/indexer/.env
+
 # other files
 temp

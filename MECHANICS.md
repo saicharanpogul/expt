@@ -355,3 +355,90 @@ All transaction success messages display:
 | `EvtVetoInitiated`     | `initiate_veto`      | expt_config, milestone_index, staker, stake_amount, total_veto_stake |
 | `EvtMilestoneResolved` | `resolve_milestone`  | expt_config, milestone_index, passed (bool)    |
 | `EvtBuilderFundsClaimed` | `claim_builder_funds` | expt_config, builder, amount, total_claimed  |
+
+---
+
+## 11. Indexer Middleware
+
+### Architecture
+
+The indexer is a lightweight **Bun + Hono** service that maintains a PostgreSQL
+mirror (hosted on **Supabase**) of on-chain state. It ingests data via **Helius
+Enhanced Transaction webhooks** and exposes a REST API for the website and
+mobile app.
+
+```
+Solana Program → emits events → Helius Webhook
+                                     ↓
+                           POST /webhook → Indexer (Bun + Hono)
+                                     ↓
+                             Supabase PostgreSQL
+                                     ↑
+                           GET /api/* ← Website / Mobile App
+```
+
+### Stack
+
+| Component | Technology |
+|-----------|------------|
+| Runtime   | Bun        |
+| Server    | Hono       |
+| Database  | Supabase (hosted PostgreSQL) |
+| Webhook   | Helius Enhanced Transactions |
+
+### Database Tables
+
+| Table                | Description |
+|----------------------|-------------|
+| `builders`           | Builder profiles (PDA address, wallet, social links) |
+| `experiments`        | Experiment state mirror (status, treasury, claims) |
+| `milestones`         | Per-milestone state (status, deliverables, veto stake) |
+| `experiment_events`  | Immutable event timeline (all on-chain events) |
+
+### REST API
+
+| Method | Route | Description |
+|--------|-------|-------------|
+| `GET`  | `/api/experiments` | List experiments (paginated, filterable) |
+| `GET`  | `/api/experiments/:address` | Single experiment + milestones + events |
+| `GET`  | `/api/builders/:wallet` | Builder profile + experiments |
+| `GET`  | `/api/analytics` | Aggregated protocol stats |
+| `GET`  | `/api/events/:experimentAddr` | Event timeline |
+| `POST` | `/webhook` | Helius webhook receiver |
+
+### Webhook Event Mapping
+
+Each Anchor program event is mapped to a database operation:
+
+| Event | Action |
+|-------|--------|
+| `EvtBuilderCreated` | Upsert builder |
+| `EvtExptConfigCreated` | Insert experiment + milestones |
+| `EvtPresaleFinalized` | Update experiment status |
+| `EvtMilestoneSubmitted` | Update milestone status |
+| `EvtVetoInitiated` | Update milestone veto stake |
+| `EvtMilestoneResolved` | Update milestone status (passed/failed) |
+| `EvtBuilderFundsClaimed` | Update experiment claimed amount |
+| `EvtPoolLaunched` | Update experiment pool info |
+
+### Initial Backfill
+
+Run `bun run sync` to backfill Supabase from on-chain state via `@expt/sdk`.
+After initial sync, the webhook keeps the database up to date in real-time.
+
+### Location
+
+```
+apps/indexer/
+├── src/
+│   ├── index.ts      — Hono server entry
+│   ├── webhook.ts    — Helius webhook handler
+│   ├── api.ts        — REST API routes
+│   ├── db.ts         — Supabase client
+│   └── sync.ts       — RPC backfill script
+├── supabase/
+│   └── schema.sql    — Database schema
+├── .env.example
+├── package.json
+└── tsconfig.json
+```
