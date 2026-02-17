@@ -12,6 +12,7 @@ import {
   DialogDescription,
 } from "@/components/ui/dialog";
 import { ArrowLeft, ExternalLink, Clock, Shield, Coins, User, Copy, Check, Loader2, Wrench, CheckCircle2, XCircle } from "lucide-react";
+import { ProofPreview } from "@/components/proof-preview";
 import { useState, useEffect, use, useCallback } from "react";
 import { useSearchParams } from "next/navigation";
 import { useExptClient } from "@/hooks/use-expt-client";
@@ -975,15 +976,11 @@ export default function ExperimentDetailPage({
                     )}
                   </div>
                   {milestone.deliverable && (
-                    <a
-                      href={milestone.deliverable}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="mt-2 ml-4 inline-flex items-center gap-1 text-xs text-[#140E1C] hover:underline"
-                    >
-                      View deliverable{" "}
-                      <ExternalLink className="h-3 w-3" />
-                    </a>
+                    <ProofPreview
+                      deliverable={milestone.deliverable}
+                      deliverableType={milestone.deliverableType}
+                      milestoneIndex={milestone.index}
+                    />
                   )}
                 </div>
 
