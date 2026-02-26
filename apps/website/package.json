@@ -5,6 +5,7 @@
   "scripts": {
     "dev": "next dev --webpack",
     "build": "next build --webpack",
+    "vercel-build": "cd ../../programs/sdk && npm install --legacy-peer-deps && npm run build && cd ../../apps/website && next build --webpack",
     "start": "next start",
     "lint": "eslint"
   },
