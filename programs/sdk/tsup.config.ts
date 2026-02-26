@@ -7,5 +7,5 @@ export default defineConfig({
   splitting: false,
   sourcemap: true,
   clean: true,
-  external: ["@coral-xyz/anchor", "@solana/web3.js", "bn.js"],
+  external: ["@coral-xyz/anchor", "@solana/web3.js", "@solana/spl-token", "bn.js"],
 });
