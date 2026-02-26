@@ -13,7 +13,7 @@
  */
 
 import type { ParsedExptConfig, ParsedMilestone } from "@expt/sdk";
-import { ExptClient } from "@expt/sdk";
+import { ExptClient, exptStatusLabel, milestoneStatusLabel, deliverableTypeLabel } from "@expt/sdk";
 import { PublicKey } from "@solana/web3.js";
 import BN from "bn.js";
 
@@ -96,48 +96,56 @@ export async function fetchExperimentsByBuilder(
 // ── Mapper: Indexer JSON → ParsedExptConfig ─────────────────────
 
 function mapIndexerExperiment(raw: any): ParsedExptConfig {
+  const status = raw.status as number;
+  const vetoThresholdBps = raw.veto_threshold_bps ?? 0;
   return {
     address: new PublicKey(raw.address),
     builder: new PublicKey(raw.builder_wallet),
     name: raw.name,
     uri: raw.uri || "",
     mint: new PublicKey(raw.mint),
-    status: raw.status,
+    status,
+    statusLabel: exptStatusLabel(status),
     milestoneCount: raw.milestone_count,
     presaleMinimumCap: new BN(raw.presale_minimum_cap || "0"),
-    vetoThresholdBps: raw.veto_threshold_bps,
+    vetoThresholdBps,
+    vetoThresholdPercent: vetoThresholdBps / 100,
     challengeWindow: new BN(raw.challenge_window || "0"),
     totalTreasuryReceived: new BN(raw.total_treasury_received || "0"),
     totalClaimedByBuilder: new BN(raw.total_claimed_by_builder || "0"),
     poolLaunched: raw.pool_launched || false,
-    dammPool: raw.damm_pool ? new PublicKey(raw.damm_pool) : null,
+    presaleFundsWithdrawn: raw.presale_funds_withdrawn || false,
+    treasuryBump: raw.treasury_bump ?? 0,
+    dammPool: raw.damm_pool ? new PublicKey(raw.damm_pool) : PublicKey.default,
+    positionNftMint: raw.position_nft_mint ? new PublicKey(raw.position_nft_mint) : PublicKey.default,
+    lpPosition: raw.lp_position ? new PublicKey(raw.lp_position) : PublicKey.default,
     totalSupply: new BN(raw.total_supply || "0"),
     milestones: (raw.milestones || [])
       .sort((a: any, b: any) => a.index - b.index)
       .map(mapIndexerMilestone),
-    // Fields that may not exist on indexer response — provide safe defaults
     presale: raw.presale ? new PublicKey(raw.presale) : PublicKey.default,
-    presaleAuthority: raw.presale_authority
-      ? new PublicKey(raw.presale_authority)
-      : PublicKey.default,
     builderPda: raw.builder_pda
       ? new PublicKey(raw.builder_pda)
       : PublicKey.default,
-  } as ParsedExptConfig;
+  };
 }
 
 function mapIndexerMilestone(raw: any): ParsedMilestone {
+  const status = raw.status as number;
+  const deliverableType = raw.deliverable_type ?? 0;
   return {
     index: raw.index,
     description: raw.description,
     unlockPercent: raw.unlock_percent,
-    unlockBps: raw.unlock_percent * 100, // percent to bps
-    deliverableType: raw.deliverable_type,
-    deadline: raw.deadline ? new Date(raw.deadline) : null,
-    status: raw.status,
-    deliverable: raw.deliverable || null,
+    unlockBps: raw.unlock_percent * 100,
+    deliverableType,
+    deliverableTypeLabel: deliverableTypeLabel(deliverableType),
+    deadline: raw.deadline ? new Date(raw.deadline) : new Date(0),
+    status,
+    statusLabel: milestoneStatusLabel(status),
+    deliverable: raw.deliverable || "",
     submittedAt: raw.submitted_at ? new Date(raw.submitted_at) : null,
     totalVetoStake: new BN(raw.total_veto_stake || "0"),
-    challengeWindowEnd: null, // Not stored separately in indexer
-  } as ParsedMilestone;
+    challengeWindowEnd: raw.challenge_window_end ? new Date(raw.challenge_window_end) : null,
+  };
 }

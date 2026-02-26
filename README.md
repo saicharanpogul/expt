@@ -268,6 +268,17 @@ expt.fun/
 │       │   └── providers.tsx       # Privy + Solana providers
 │       └── lib/
 │           └── create-experiment.ts # Experiment creation helpers
+├── apps/mobile/                    # Expo React Native app
+│   ├── app/
+│   │   ├── (tabs)/
+│   │   │   ├── browse.tsx          # Browse experiments
+│   │   │   └── profile.tsx         # Wallet connect + builder profile
+│   │   └── experiment/[address].tsx # Experiment detail with tabs
+│   └── lib/
+│       ├── api.ts                  # Direct RPC data layer (no SDK)
+│       ├── theme.ts                # Shared design tokens
+│       └── wallet.ts               # MWA wallet integration
+├── apps/indexer/                   # Bun + Hono backend (Helius webhooks)
 ```
 
 ---
@@ -362,6 +373,20 @@ bun run tests/localnet-e2e.ts
 
 > **Note:** The test takes ~3 minutes due to presale timing (start/end delays), pool activation wait (35s), and milestone challenge windows.
 
+## Devnet Deployment
+
+The program is deployed on **Solana Devnet**:
+
+| Item | Value |
+|------|-------|
+| **Program ID** | `9EY3BccFR7QprDNFbZ2fqy5t6wzgpiAYg24mcjYu5nYw` |
+| **Network** | Devnet |
+| **RPC** | `https://api.devnet.solana.com` |
+| **Explorer** | [View on Solscan](https://solscan.io/account/9EY3BccFR7QprDNFbZ2fqy5t6wzgpiAYg24mcjYu5nYw?cluster=devnet) |
+
+> [!NOTE]
+> The external programs (Meteora Presale and DAMM v2) must also be available on devnet for the full lifecycle to work.
+
 ---
 
 ## Website
@@ -384,6 +409,52 @@ cd apps/website
 bun install
 bun run dev
 ```
+
+### Deploying to Vercel
+
+The website is configured for monorepo deployment on Vercel:
+
+1. **Import the repo** on [vercel.com/new](https://vercel.com/new)
+2. **Set Root Directory** to `apps/website`
+3. **Framework Preset** — Next.js (auto-detected)
+4. **Build Command** — `cd ../../programs/sdk && npm run build && cd ../../apps/website && bun run build`
+5. **Output Directory** — `.next` (default)
+6. **Install Command** — `bun install` (auto-detected)
+7. **Add Environment Variables:**
+
+| Variable | Value | Required |
+|----------|-------|----------|
+| `NEXT_PUBLIC_SOLANA_RPC_URL` | `https://api.devnet.solana.com` | ✅ |
+| `NEXT_PUBLIC_SOLANA_NETWORK` | `devnet` | ✅ |
+| `NEXT_PUBLIC_PRIVY_APP_ID` | Your Privy app ID | ✅ |
+| `PINATA_JWT` | Your Pinata JWT for IPFS uploads | ✅ |
+| `NEXT_PUBLIC_ADMIN_ROUTE_HASH` | Random hash for admin routes | Optional |
+| `NEXT_PUBLIC_ADMIN_PASSCODE` | Admin panel passcode | Optional |
+
+> [!IMPORTANT]
+> The SDK (`@expt/sdk`) is a **local workspace dependency** (`../../programs/sdk`). The build command above builds the SDK first before building the website. Vercel needs access to the full monorepo — set the Root Directory to `apps/website` but do **not** restrict the build scope.
+
+---
+
+## Mobile App
+
+The mobile app is an **Expo** (React Native) app located in `apps/mobile/`. It provides a read-only companion experience — browse experiments, view detailed milestone progress, and connect a wallet via Mobile Wallet Adapter (Android).
+
+### Features
+
+- **Browse** — Experiment cards with token images, tickers, milestone progress
+- **Experiment Detail** — Overview / Milestones / Treasury tabs with external links (Solscan, Jupiter, Meteora)
+- **Profile** — MWA wallet connect, builder stats, experiment list
+
+### Running
+
+```bash
+cd apps/mobile
+bun install
+npx expo start
+```
+
+Set `EXPO_PUBLIC_SOLANA_RPC_URL` in `.env` to match your target cluster.
 
 ---
 

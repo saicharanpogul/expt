@@ -7,13 +7,17 @@ import {
   StyleSheet,
   ActivityIndicator,
   RefreshControl,
+  Image,
 } from "react-native";
 import { useRouter } from "expo-router";
 import {
   fetchExperiments,
+  fetchMetadata,
   lamportsToSol,
+  truncateAddress,
   ExptStatus,
   type ParsedExptConfig,
+  type ExptMetadata,
 } from "../../lib/api";
 import { colors, spacing, radius, fonts } from "../../lib/theme";
 
@@ -22,20 +26,24 @@ const STATUS_FILTERS = [
   { label: "Active", value: ExptStatus.Active },
   { label: "Presale", value: ExptStatus.PresaleActive },
   { label: "Completed", value: ExptStatus.Completed },
-  { label: "Presale Failed", value: ExptStatus.PresaleFailed },
+  { label: "Failed", value: ExptStatus.PresaleFailed },
 ];
 
 const STATUS_COLORS: Record<number, string> = {
   [ExptStatus.Created]: colors.mutedForeground,
   [ExptStatus.PresaleActive]: colors.warning,
-  [ExptStatus.Active]: colors.info,
+  [ExptStatus.Active]: colors.primary,
   [ExptStatus.Completed]: colors.success,
   [ExptStatus.PresaleFailed]: colors.danger,
 };
 
+// Track metadata per experiment address
+type MetadataMap = Record<string, ExptMetadata | null>;
+
 export default function BrowseScreen() {
   const router = useRouter();
   const [experiments, setExperiments] = useState<ParsedExptConfig[]>([]);
+  const [metadataMap, setMetadataMap] = useState<MetadataMap>({});
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [activeFilter, setActiveFilter] = useState<ExptStatus | undefined>(
@@ -46,6 +54,16 @@ export default function BrowseScreen() {
     try {
       const data = await fetchExperiments();
       setExperiments(data);
+
+      // Fetch metadata for all experiments in parallel
+      const entries = await Promise.all(
+        data.map(async (e) => {
+          const key = e.address.toBase58();
+          const meta = await fetchMetadata(e.uri);
+          return [key, meta] as [string, ExptMetadata | null];
+        })
+      );
+      setMetadataMap(Object.fromEntries(entries));
     } catch (err) {
       console.error("Failed to fetch experiments:", err);
     }
@@ -69,19 +87,47 @@ export default function BrowseScreen() {
       : experiments;
 
   const renderExperiment = ({ item }: { item: ParsedExptConfig }) => {
+    const key = item.address.toBase58();
+    const meta = metadataMap[key];
     const treasury = lamportsToSol(item.totalTreasuryReceived);
     const statusColor = STATUS_COLORS[item.status] ?? colors.mutedForeground;
+    const passedCount = item.milestones.filter((m) => m.status === 3).length;
 
     return (
       <TouchableOpacity
         style={styles.card}
         activeOpacity={0.7}
-        onPress={() => router.push(`/experiment/${item.address.toBase58()}`)}
+        onPress={() => router.push(`/experiment/${key}`)}
       >
+        {/* Top row: avatar + name + badge */}
         <View style={styles.cardHeader}>
-          <Text style={styles.cardTitle} numberOfLines={1}>
-            {item.name}
-          </Text>
+          <View style={styles.cardHeaderLeft}>
+            {meta?.image ? (
+              <Image
+                source={{ uri: meta.image }}
+                style={styles.tokenImage}
+              />
+            ) : (
+              <View style={styles.tokenImageFallback}>
+                <Text style={styles.tokenImageFallbackText}>
+                  {item.name.charAt(0).toUpperCase()}
+                </Text>
+              </View>
+            )}
+            <View style={styles.cardTitleWrap}>
+              <View style={styles.cardTitleRow}>
+                <Text style={styles.cardTitle} numberOfLines={1}>
+                  {item.name}
+                </Text>
+                {meta?.symbol && (
+                  <Text style={styles.ticker}>${meta.symbol}</Text>
+                )}
+              </View>
+              <Text style={styles.builderAddr}>
+                by {truncateAddress(item.builder.toBase58())}
+              </Text>
+            </View>
+          </View>
           <View style={[styles.badge, { borderColor: statusColor }]}>
             <Text style={[styles.badgeText, { color: statusColor }]}>
               {item.statusLabel}
@@ -89,6 +135,7 @@ export default function BrowseScreen() {
           </View>
         </View>
 
+        {/* Stats row */}
         <View style={styles.cardStats}>
           <View style={styles.stat}>
             <Text style={styles.statLabel}>Treasury</Text>
@@ -97,8 +144,10 @@ export default function BrowseScreen() {
             </Text>
           </View>
           <View style={styles.stat}>
-            <Text style={styles.statLabel}>Milestones</Text>
-            <Text style={styles.statValue}>{item.milestoneCount}</Text>
+            <Text style={styles.statLabel}>Shipped</Text>
+            <Text style={styles.statValue}>
+              {passedCount}/{item.milestoneCount}
+            </Text>
           </View>
           <View style={styles.stat}>
             <Text style={styles.statLabel}>Veto</Text>
@@ -140,7 +189,7 @@ export default function BrowseScreen() {
       {loading ? (
         <ActivityIndicator
           size="large"
-          color={colors.foreground}
+          color={colors.primary}
           style={styles.loader}
         />
       ) : (
@@ -209,13 +258,62 @@ const styles = StyleSheet.create({
   cardHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
-    alignItems: "center",
+    alignItems: "flex-start",
     marginBottom: spacing.sm,
+  },
+  cardHeaderLeft: {
+    flexDirection: "row",
+    alignItems: "center",
+    flex: 1,
+    marginRight: spacing.sm,
+    gap: spacing.sm,
+  },
+  tokenImage: {
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    backgroundColor: colors.secondary,
+  },
+  tokenImageFallback: {
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    backgroundColor: colors.foreground,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  tokenImageFallbackText: {
+    color: colors.background,
+    fontWeight: "700",
+    fontSize: 14,
+  },
+  cardTitleWrap: {
+    flex: 1,
+  },
+  cardTitleRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
   },
   cardTitle: {
     ...fonts.subheading,
-    flex: 1,
-    marginRight: spacing.sm,
+    fontSize: 15,
+    flexShrink: 1,
+  },
+  ticker: {
+    fontSize: 11,
+    color: colors.mutedForeground,
+    backgroundColor: colors.background,
+    paddingHorizontal: 5,
+    paddingVertical: 1,
+    borderRadius: 4,
+    overflow: "hidden",
+  },
+  builderAddr: {
+    ...fonts.mono,
+    fontSize: 11,
+    color: colors.mutedForeground,
+    marginTop: 1,
   },
   badge: {
     paddingHorizontal: 8,

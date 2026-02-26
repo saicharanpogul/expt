@@ -14,6 +14,8 @@ export const colors = {
   info: "#457B9D",
   secondary: "#DEDEE3",
   accent: "#DEDEE3",
+  primary: "#FFB900",
+  primaryDark: "#E5A600",
 } as const;
 
 export const spacing = {

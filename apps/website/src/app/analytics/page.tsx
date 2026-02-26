@@ -410,7 +410,7 @@ export default function AnalyticsPage() {
               { label: "Presale Active", value: analytics.statusCounts[ExptStatus.PresaleActive] || 0, color: "#E09F3E" },
               { label: "Active", value: analytics.statusCounts[ExptStatus.Active] || 0, color: "#457B9D" },
               { label: "Completed", value: analytics.statusCounts[ExptStatus.Completed] || 0, color: "#2D6A4F" },
-              { label: "Failed", value: analytics.statusCounts[ExptStatus.Failed] || 0, color: "#9B2226" },
+              { label: "Failed", value: analytics.statusCounts[ExptStatus.PresaleFailed] || 0, color: "#9B2226" },
             ]}
           />
 

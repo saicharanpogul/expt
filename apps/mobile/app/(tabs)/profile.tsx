@@ -13,6 +13,7 @@ import { connectWallet } from "../../lib/wallet";
 import {
   fetchExperimentsByBuilder,
   lamportsToSol,
+  truncateAddress,
   type ParsedExptConfig,
 } from "../../lib/api";
 import { colors, spacing, radius, fonts } from "../../lib/theme";
@@ -30,8 +31,6 @@ export default function ProfileScreen() {
       if (pubkey) {
         const walletAddr = pubkey.toBase58();
         setWallet(walletAddr);
-
-        // Fetch builder's experiments from RPC
         const expts = await fetchExperimentsByBuilder(walletAddr);
         setExperiments(expts);
       } else {
@@ -43,6 +42,11 @@ export default function ProfileScreen() {
       setLoading(false);
     }
   }, []);
+
+  const handleDisconnect = () => {
+    setWallet(null);
+    setExperiments([]);
+  };
 
   // ── Not connected ─────────────────────────────────────────────
   if (!wallet) {
@@ -69,35 +73,63 @@ export default function ProfileScreen() {
   }
 
   // ── Connected ─────────────────────────────────────────────────
-  const renderExperiment = ({ item }: { item: ParsedExptConfig }) => (
-    <TouchableOpacity
-      style={styles.card}
-      activeOpacity={0.7}
-      onPress={() => router.push(`/experiment/${item.address.toBase58()}`)}
-    >
-      <Text style={styles.cardTitle} numberOfLines={1}>
-        {item.name}
-      </Text>
-      <View style={styles.cardRow}>
-        <Text style={styles.cardLabel}>{item.statusLabel}</Text>
-        <Text style={styles.cardValue}>
-          {lamportsToSol(item.totalTreasuryReceived).toFixed(2)} SOL
-        </Text>
-      </View>
-    </TouchableOpacity>
+  const totalTreasury = experiments.reduce(
+    (sum, e) => sum + lamportsToSol(e.totalTreasuryReceived),
+    0
   );
+  const totalClaimed = experiments.reduce(
+    (sum, e) => sum + lamportsToSol(e.totalClaimedByBuilder),
+    0
+  );
+
+  const renderExperiment = ({ item }: { item: ParsedExptConfig }) => {
+    const passedCount = item.milestones.filter((m) => m.status === 3).length;
+    return (
+      <TouchableOpacity
+        style={styles.card}
+        activeOpacity={0.7}
+        onPress={() => router.push(`/experiment/${item.address.toBase58()}`)}
+      >
+        <Text style={styles.cardTitle} numberOfLines={1}>
+          {item.name}
+        </Text>
+        <View style={styles.cardRow}>
+          <Text style={styles.cardLabel}>{item.statusLabel}</Text>
+          <Text style={styles.cardValue}>
+            {passedCount}/{item.milestoneCount} shipped
+          </Text>
+        </View>
+        <View style={styles.cardRow}>
+          <Text style={styles.cardLabel}>Treasury</Text>
+          <Text style={styles.cardValue}>
+            {lamportsToSol(item.totalTreasuryReceived).toFixed(2)} SOL
+          </Text>
+        </View>
+      </TouchableOpacity>
+    );
+  };
 
   return (
     <View style={styles.container}>
       {/* Profile header */}
       <View style={styles.profileHeader}>
-        <Text style={styles.profileEmoji}>👤</Text>
+        <View style={styles.avatarCircle}>
+          <Text style={styles.avatarText}>
+            {wallet.charAt(0).toUpperCase()}
+          </Text>
+        </View>
         <View style={styles.profileInfo}>
           <Text style={styles.profileName}>Builder</Text>
           <Text style={styles.profileWallet}>
-            {wallet.slice(0, 6)}...{wallet.slice(-4)}
+            {truncateAddress(wallet)}
           </Text>
         </View>
+        <TouchableOpacity
+          style={styles.disconnectBtn}
+          onPress={handleDisconnect}
+        >
+          <Text style={styles.disconnectText}>Disconnect</Text>
+        </TouchableOpacity>
       </View>
 
       {/* Stats row */}
@@ -105,6 +137,18 @@ export default function ProfileScreen() {
         <View style={styles.statItem}>
           <Text style={styles.statNumber}>{experiments.length}</Text>
           <Text style={styles.statLabel}>Experiments</Text>
+        </View>
+        <View style={styles.statItem}>
+          <Text style={styles.statNumber}>
+            {totalTreasury.toFixed(2)}
+          </Text>
+          <Text style={styles.statLabel}>SOL Raised</Text>
+        </View>
+        <View style={styles.statItem}>
+          <Text style={styles.statNumber}>
+            {totalClaimed.toFixed(2)}
+          </Text>
+          <Text style={styles.statLabel}>SOL Claimed</Text>
         </View>
       </View>
 
@@ -169,8 +213,18 @@ const styles = StyleSheet.create({
     padding: spacing.md,
     gap: spacing.md,
   },
-  profileEmoji: {
-    fontSize: 40,
+  avatarCircle: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: colors.foreground,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  avatarText: {
+    color: colors.background,
+    fontWeight: "700",
+    fontSize: 16,
   },
   profileInfo: {
     flex: 1,
@@ -183,10 +237,23 @@ const styles = StyleSheet.create({
     color: colors.mutedForeground,
     marginTop: 2,
   },
+  disconnectBtn: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.cardBorder,
+    backgroundColor: colors.card,
+  },
+  disconnectText: {
+    fontSize: 12,
+    color: colors.mutedForeground,
+    fontWeight: "500",
+  },
   statsRow: {
     flexDirection: "row",
     paddingHorizontal: spacing.md,
-    gap: spacing.md,
+    gap: spacing.sm,
     marginBottom: spacing.md,
   },
   statItem: {
@@ -234,6 +301,7 @@ const styles = StyleSheet.create({
   cardRow: {
     flexDirection: "row",
     justifyContent: "space-between",
+    marginTop: 2,
   },
   cardLabel: {
     ...fonts.small,

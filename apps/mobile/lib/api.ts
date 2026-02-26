@@ -27,6 +27,8 @@ const PROGRAM_ID = new PublicKey(
   "9EY3BccFR7QprDNFbZ2fqy5t6wzgpiAYg24mcjYu5nYw"
 );
 
+const TREASURY_SEED = new TextEncoder().encode("treasury");
+
 const MAX_NAME_LEN = 32;
 const MAX_URI_LEN = 200;
 const MAX_MILESTONE_DESC_LEN = 128;
@@ -362,4 +364,84 @@ export async function fetchExperimentsByBuilder(
     console.warn("[api] Failed to fetch builder experiments:", err);
     return [];
   }
+}
+
+// ── Metadata fetching ───────────────────────────────────────────
+
+export interface ExptMetadata {
+  name?: string;
+  symbol?: string;
+  description?: string;
+  image?: string;
+  properties?: Record<string, any>;
+}
+
+const _metadataCache = new Map<string, ExptMetadata>();
+
+/**
+ * Fetch JSON metadata from an experiment's URI.
+ * Results are cached in-memory for the session.
+ */
+export async function fetchMetadata(uri: string): Promise<ExptMetadata | null> {
+  if (!uri) return null;
+  if (_metadataCache.has(uri)) return _metadataCache.get(uri)!;
+
+  try {
+    const res = await fetch(uri);
+    if (!res.ok) return null;
+    const json = await res.json();
+    _metadataCache.set(uri, json);
+    return json;
+  } catch {
+    return null;
+  }
+}
+
+// ── Treasury balance ────────────────────────────────────────────
+
+function deriveTreasuryPda(exptConfigAddress: PublicKey): PublicKey {
+  const [pda] = PublicKey.findProgramAddressSync(
+    [TREASURY_SEED, exptConfigAddress.toBytes()],
+    PROGRAM_ID
+  );
+  return pda;
+}
+
+/**
+ * Get the live SOL balance of an experiment's treasury PDA.
+ * Returns lamports as a number.
+ */
+export async function fetchTreasuryBalance(
+  exptConfigAddress: string
+): Promise<number> {
+  try {
+    const connection = getConnection();
+    const configPubkey = new PublicKey(exptConfigAddress);
+    const treasury = deriveTreasuryPda(configPubkey);
+    return await connection.getBalance(treasury);
+  } catch {
+    return 0;
+  }
+}
+
+// ── Formatting helpers ──────────────────────────────────────────
+
+export function formatChallengeWindow(seconds: number): string {
+  if (seconds < 60) return `${seconds}s`;
+  if (seconds < 3600) return `${Math.round(seconds / 60)}m`;
+  const h = seconds / 3600;
+  return Number.isInteger(h) ? `${h}h` : `${h.toFixed(1)}h`;
+}
+
+export function formatDate(date: Date | null): string {
+  if (!date || date.getTime() === 0) return "—";
+  return date.toLocaleDateString("en-US", {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+  });
+}
+
+export function truncateAddress(address: string): string {
+  return `${address.slice(0, 4)}...${address.slice(-4)}`;
 }

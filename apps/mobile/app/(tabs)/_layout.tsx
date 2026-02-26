@@ -12,7 +12,7 @@ export default function TabLayout() {
           height: 56,
           paddingBottom: 6,
         },
-        tabBarActiveTintColor: colors.foreground,
+        tabBarActiveTintColor: colors.primary,
         tabBarInactiveTintColor: colors.mutedForeground,
         tabBarLabelStyle: { fontSize: 11, fontWeight: "500" },
         headerStyle: { backgroundColor: colors.background },

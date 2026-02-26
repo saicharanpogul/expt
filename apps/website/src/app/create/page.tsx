@@ -3,7 +3,7 @@
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { useState, useRef } from "react";
+import { useState, useRef, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import {
   Twitter,
@@ -40,6 +40,18 @@ const DELIVERABLE_TYPES = [
 ];
 
 export default function CreatePage() {
+  return (
+    <Suspense fallback={
+      <div className="max-w-[600px] mx-auto px-6 py-16 text-center">
+        <div className="w-6 h-6 mx-auto border-2 border-[#DEDEE3] border-t-[#140E1C] rounded-full animate-spin" />
+      </div>
+    }>
+      <CreatePageContent />
+    </Suspense>
+  );
+}
+
+function CreatePageContent() {
   const { ready, authenticated, user, login, linkTwitter, connectWallet } = usePrivy();
 
   // Derive auth state from Privy
