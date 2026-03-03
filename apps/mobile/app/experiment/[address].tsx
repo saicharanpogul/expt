@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import {
   View,
   Text,
@@ -9,8 +9,11 @@ import {
   Image,
   Linking,
   RefreshControl,
+  Share,
+  TextInput,
   Alert,
 } from "react-native";
+import * as Clipboard from "expo-clipboard";
 import { useLocalSearchParams } from "expo-router";
 import {
   fetchExperiment,
@@ -27,6 +30,14 @@ import {
   type ExptMetadata,
 } from "../../lib/api";
 import { colors, spacing, radius, fonts } from "../../lib/theme";
+import { connectWallet, signAndSendTransaction, getConnection } from "../../lib/wallet";
+import {
+  buildSubmitMilestoneIx,
+  buildInitiateVetoIx,
+  buildResolveMilestoneIx,
+  buildClaimBuilderFundsIx,
+} from "../../lib/transactions";
+import { PublicKey, Transaction } from "@solana/web3.js";
 
 // ── Color maps ──────────────────────────────────────────────────
 
@@ -63,8 +74,11 @@ const TABS: { key: Tab; label: string }[] = [
 
 // ── Helpers ─────────────────────────────────────────────────────
 
+const NETWORK = process.env.EXPO_PUBLIC_SOLANA_NETWORK || "devnet";
+const IS_MAINNET = NETWORK === "mainnet-beta";
+
 function getSolscanUrl(address: string, type: "token" | "account" = "token") {
-  return `https://solscan.io/${type}/${address}?cluster=devnet`;
+  return `https://solscan.io/${type}/${address}${IS_MAINNET ? "" : `?cluster=${NETWORK}`}`;
 }
 
 function getJupiterUrl(mint: string) {
@@ -72,7 +86,9 @@ function getJupiterUrl(mint: string) {
 }
 
 function getMeteoraUrl(poolAddress: string) {
-  return `https://devnet.meteora.ag/dammv2/${poolAddress}`;
+  return IS_MAINNET
+    ? `https://app.meteora.ag/dammv2/${poolAddress}`
+    : `https://devnet.meteora.ag/dammv2/${poolAddress}`;
 }
 
 // ── Component ───────────────────────────────────────────────────
@@ -86,6 +102,34 @@ export default function ExperimentDetailScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [activeTab, setActiveTab] = useState<Tab>("overview");
   const [copied, setCopied] = useState(false);
+
+  // Wallet & transaction state
+  const [walletPubkey, setWalletPubkey] = useState<PublicKey | null>(null);
+  const [txLoading, setTxLoading] = useState<string | null>(null); // tracks which action is loading
+  const [txResult, setTxResult] = useState<{type: "success" | "error"; msg: string; sig?: string} | null>(null);
+  const [deliverableInput, setDeliverableInput] = useState("");
+  const [vetoAmountInput, setVetoAmountInput] = useState("");
+  const [showSubmitForm, setShowSubmitForm] = useState<number | null>(null); // milestone index
+  const [showVetoForm, setShowVetoForm] = useState<number | null>(null); // milestone index
+
+  // ── Countdown timer for active challenge windows ──────
+  const [now, setNow] = useState(Date.now());
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, []);
+
+  function formatCountdown(endTime: Date | null): string | null {
+    if (!endTime) return null;
+    const diff = endTime.getTime() - now;
+    if (diff <= 0) return null;
+    const h = Math.floor(diff / 3600000);
+    const m = Math.floor((diff % 3600000) / 60000);
+    const s = Math.floor((diff % 60000) / 1000);
+    if (h > 0) return `${h}h ${m}m ${s}s`;
+    if (m > 0) return `${m}m ${s}s`;
+    return `${s}s`;
+  }
 
   const fetchData = useCallback(
     async (silent = false) => {
@@ -119,12 +163,99 @@ export default function ExperimentDetailScreen() {
     setRefreshing(false);
   }, [fetchData]);
 
-  const copyCA = () => {
+  const copyCA = async () => {
     if (!experiment) return;
     const mint = experiment.mint.toBase58();
-    Alert.alert("Contract Address", mint);
+    await Clipboard.setStringAsync(mint);
     setCopied(true);
     setTimeout(() => setCopied(false), 1500);
+  };
+
+  const shareExperiment = async () => {
+    if (!experiment) return;
+    try {
+      await Share.share({
+        message: `Check out ${experiment.name} on Expt — https://expt.fun/experiment/${address}`,
+        url: `https://expt.fun/experiment/${address}`,
+      });
+    } catch {}
+  };
+
+  // ── Wallet connect for actions ────────────────────────
+  const handleConnectWallet = async () => {
+    const pk = await connectWallet();
+    if (pk) setWalletPubkey(pk);
+  };
+
+  const isBuilder = walletPubkey && experiment
+    ? walletPubkey.equals(experiment.builder)
+    : false;
+
+  // ── Transaction execution ───────────────────────────
+  const executeTx = async (label: string, buildIx: () => any) => {
+    setTxLoading(label);
+    setTxResult(null);
+    try {
+      const ix = buildIx();
+      const tx = new Transaction().add(ix);
+      const sig = await signAndSendTransaction(tx);
+      if (sig) {
+        setTxResult({ type: "success", msg: `${label} sent`, sig });
+        // Refresh data after tx
+        await fetchData(true);
+      } else {
+        setTxResult({ type: "error", msg: "Transaction was cancelled" });
+      }
+    } catch (err: any) {
+      setTxResult({ type: "error", msg: err.message || "Transaction failed" });
+    } finally {
+      setTxLoading(null);
+    }
+  };
+
+  const handleSubmitMilestone = async (msIndex: number) => {
+    if (!experiment || !walletPubkey || !deliverableInput.trim()) return;
+    await executeTx("Submit Proof", () =>
+      buildSubmitMilestoneIx(
+        walletPubkey,
+        experiment.mint,
+        msIndex,
+        deliverableInput.trim()
+      )
+    );
+    setShowSubmitForm(null);
+    setDeliverableInput("");
+  };
+
+  const handleVeto = async (msIndex: number) => {
+    if (!experiment || !walletPubkey || !vetoAmountInput.trim()) return;
+    const solAmount = parseFloat(vetoAmountInput);
+    if (isNaN(solAmount) || solAmount <= 0) {
+      Alert.alert("Invalid amount", "Enter a valid SOL amount");
+      return;
+    }
+    const exptConfigPda = new PublicKey(address!);
+    const lamports = BigInt(Math.round(solAmount * 1_000_000_000));
+    await executeTx("Veto", () =>
+      buildInitiateVetoIx(walletPubkey, exptConfigPda, msIndex, lamports)
+    );
+    setShowVetoForm(null);
+    setVetoAmountInput("");
+  };
+
+  const handleResolve = async (msIndex: number) => {
+    if (!walletPubkey) return;
+    const exptConfigPda = new PublicKey(address!);
+    await executeTx("Resolve", () =>
+      buildResolveMilestoneIx(walletPubkey, exptConfigPda, msIndex)
+    );
+  };
+
+  const handleClaim = async () => {
+    if (!experiment || !walletPubkey) return;
+    await executeTx("Claim Funds", () =>
+      buildClaimBuilderFundsIx(walletPubkey, experiment.mint)
+    );
   };
 
   // ── Loading ───────────────────────────────────────────────
@@ -217,7 +348,7 @@ export default function ExperimentDetailScreen() {
 
       {/* ── Quick Info Bar ──────────────────────────────────── */}
       <View style={styles.quickBar}>
-        {/* Ticker + CA */}
+        {/* Ticker + CA + Share */}
         <View style={styles.quickBarRow}>
           {metadata?.symbol && (
             <View style={styles.tickerBadge}>
@@ -228,6 +359,9 @@ export default function ExperimentDetailScreen() {
             <Text style={styles.copyLabel}>CA</Text>
             <Text style={styles.copyAddr}>{truncateAddress(mintStr)}</Text>
             <Text style={styles.copyIcon}>{copied ? "✓" : "📋"}</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.shareBtn} onPress={shareExperiment}>
+            <Text style={styles.shareBtnText}>↗ Share</Text>
           </TouchableOpacity>
         </View>
 
@@ -378,6 +512,59 @@ export default function ExperimentDetailScreen() {
   function renderMilestones() {
     return (
       <View style={styles.tabContent}>
+        {/* Connect wallet prompt */}
+        {!walletPubkey && (
+          <TouchableOpacity
+            style={styles.connectWalletBar}
+            onPress={handleConnectWallet}
+          >
+            <Text style={styles.connectWalletText}>
+              Connect wallet to submit, veto, or claim
+            </Text>
+          </TouchableOpacity>
+        )}
+
+        {/* Transaction result feedback */}
+        {txResult && (
+          <View
+            style={[
+              styles.txResultBar,
+              { backgroundColor: txResult.type === "success" ? "rgba(45,106,79,0.1)" : "rgba(155,34,38,0.1)" },
+            ]}
+          >
+            <Text
+              style={[
+                styles.txResultText,
+                { color: txResult.type === "success" ? colors.success : colors.danger },
+              ]}
+            >
+              {txResult.type === "success" ? "✓" : "✗"} {txResult.msg}
+            </Text>
+            {txResult.sig && (
+              <TouchableOpacity
+                onPress={() => Linking.openURL(getSolscanUrl(txResult.sig!, "account"))}
+              >
+                <Text style={styles.txSolscanLink}>View on Solscan ↗</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+        )}
+
+        {/* Builder claim button (if builder has unclaimed funds) */}
+        {isBuilder && experiment!.totalClaimedByBuilder < experiment!.totalTreasuryReceived && (
+          <TouchableOpacity
+            style={styles.actionBtn}
+            onPress={handleClaim}
+            disabled={txLoading !== null}
+          >
+            {txLoading === "Claim Funds" ? (
+              <ActivityIndicator size="small" color={colors.background} />
+            ) : (
+              <Text style={styles.actionBtnText}>💰 Claim Builder Funds</Text>
+            )}
+          </TouchableOpacity>
+        )}
+
         {experiment!.milestones.map((ms: ParsedMilestone) => {
           const msColor =
             MS_STATUS_COLORS[ms.status] ?? colors.mutedForeground;
@@ -386,6 +573,11 @@ export default function ExperimentDetailScreen() {
           const windowExpired = ms.challengeWindowEnd
             ? ms.challengeWindowEnd.getTime() < Date.now()
             : false;
+
+          // Action button logic
+          const canSubmit = isBuilder && ms.status === MilestoneStatus.Pending;
+          const canVeto = walletPubkey && ms.status === MilestoneStatus.Submitted && !windowExpired;
+          const canResolve = walletPubkey && ms.status === MilestoneStatus.Submitted && windowExpired;
 
           return (
             <View key={ms.index} style={styles.milestoneCard}>
@@ -453,18 +645,128 @@ export default function ExperimentDetailScreen() {
 
               {/* Challenge window */}
               {ms.status === MilestoneStatus.Submitted && (
-                <Text
-                  style={[
-                    styles.windowStatus,
-                    {
-                      color: windowExpired ? colors.success : colors.warning,
-                    },
-                  ]}
-                >
-                  {windowExpired
-                    ? "Veto window closed — ready to resolve"
-                    : `Veto window open until ${formatDate(ms.challengeWindowEnd)}`}
-                </Text>
+                <View>
+                  <Text
+                    style={[
+                      styles.windowStatus,
+                      {
+                        color: windowExpired ? colors.success : colors.warning,
+                      },
+                    ]}
+                  >
+                    {windowExpired
+                      ? "Veto window closed — ready to resolve"
+                      : `Veto window open until ${formatDate(ms.challengeWindowEnd)}`}
+                  </Text>
+                  {!windowExpired && formatCountdown(ms.challengeWindowEnd) && (
+                    <Text style={styles.countdown}>
+                      ⏳ {formatCountdown(ms.challengeWindowEnd)}
+                    </Text>
+                  )}
+                </View>
+              )}
+
+              {/* ── Action Buttons ── */}
+              {walletPubkey && (
+                <View style={styles.actionArea}>
+                  {/* Submit Proof (builder only, pending milestone) */}
+                  {canSubmit && showSubmitForm !== ms.index && (
+                    <TouchableOpacity
+                      style={styles.actionBtn}
+                      onPress={() => setShowSubmitForm(ms.index)}
+                    >
+                      <Text style={styles.actionBtnText}>📤 Submit Proof</Text>
+                    </TouchableOpacity>
+                  )}
+                  {canSubmit && showSubmitForm === ms.index && (
+                    <View style={styles.actionForm}>
+                      <TextInput
+                        style={styles.actionInput}
+                        placeholder="Deliverable URL (e.g. https://github.com/...)"
+                        placeholderTextColor={colors.mutedForeground}
+                        value={deliverableInput}
+                        onChangeText={setDeliverableInput}
+                        autoCapitalize="none"
+                        autoCorrect={false}
+                      />
+                      <View style={styles.actionFormRow}>
+                        <TouchableOpacity
+                          style={styles.actionBtnSmall}
+                          onPress={() => handleSubmitMilestone(ms.index)}
+                          disabled={txLoading !== null || !deliverableInput.trim()}
+                        >
+                          {txLoading === "Submit Proof" ? (
+                            <ActivityIndicator size="small" color={colors.background} />
+                          ) : (
+                            <Text style={styles.actionBtnSmallText}>Submit</Text>
+                          )}
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                          style={styles.cancelBtn}
+                          onPress={() => { setShowSubmitForm(null); setDeliverableInput(""); }}
+                        >
+                          <Text style={styles.cancelBtnText}>Cancel</Text>
+                        </TouchableOpacity>
+                      </View>
+                    </View>
+                  )}
+
+                  {/* Veto (anyone, within challenge window) */}
+                  {canVeto && showVetoForm !== ms.index && (
+                    <TouchableOpacity
+                      style={[styles.actionBtn, styles.actionBtnDanger]}
+                      onPress={() => setShowVetoForm(ms.index)}
+                    >
+                      <Text style={styles.actionBtnDangerText}>🛡 Veto</Text>
+                    </TouchableOpacity>
+                  )}
+                  {canVeto && showVetoForm === ms.index && (
+                    <View style={styles.actionForm}>
+                      <TextInput
+                        style={styles.actionInput}
+                        placeholder="SOL amount to stake"
+                        placeholderTextColor={colors.mutedForeground}
+                        value={vetoAmountInput}
+                        onChangeText={setVetoAmountInput}
+                        keyboardType="decimal-pad"
+                      />
+                      <View style={styles.actionFormRow}>
+                        <TouchableOpacity
+                          style={[styles.actionBtnSmall, styles.actionBtnDanger]}
+                          onPress={() => handleVeto(ms.index)}
+                          disabled={txLoading !== null || !vetoAmountInput.trim()}
+                        >
+                          {txLoading === "Veto" ? (
+                            <ActivityIndicator size="small" color={colors.danger} />
+                          ) : (
+                            <Text style={styles.actionBtnDangerText}>Stake & Veto</Text>
+                          )}
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                          style={styles.cancelBtn}
+                          onPress={() => { setShowVetoForm(null); setVetoAmountInput(""); }}
+                        >
+                          <Text style={styles.cancelBtnText}>Cancel</Text>
+                        </TouchableOpacity>
+                      </View>
+                    </View>
+                  )}
+
+                  {/* Resolve (anyone, after window expires) */}
+                  {canResolve && (
+                    <TouchableOpacity
+                      style={[styles.actionBtn, styles.actionBtnSuccess]}
+                      onPress={() => handleResolve(ms.index)}
+                      disabled={txLoading !== null}
+                    >
+                      {txLoading === "Resolve" ? (
+                        <ActivityIndicator size="small" color={colors.background} />
+                      ) : (
+                        <Text style={styles.actionBtnText}>✓ Resolve</Text>
+                      )}
+                    </TouchableOpacity>
+                  )}
+                </View>
               )}
             </View>
           );
@@ -717,6 +1019,18 @@ const styles = StyleSheet.create({
   copyIcon: {
     fontSize: 10,
   },
+  shareBtn: {
+    height: 28,
+    paddingHorizontal: 10,
+    borderRadius: 8,
+    backgroundColor: "rgba(255,255,255,0.12)",
+    justifyContent: "center",
+  },
+  shareBtnText: {
+    color: "rgba(255,255,255,0.7)",
+    fontSize: 11,
+    fontWeight: "500",
+  },
   linkBtn: {
     height: 28,
     paddingHorizontal: 8,
@@ -951,6 +1265,13 @@ const styles = StyleSheet.create({
     marginTop: 6,
     fontWeight: "500",
   },
+  countdown: {
+    fontSize: 16,
+    fontWeight: "700",
+    color: colors.warning,
+    marginTop: 4,
+    fontFamily: "monospace",
+  },
 
   // ── Treasury ───────────────────────────────────────────
   treasuryGrid: {
@@ -1002,5 +1323,113 @@ const styles = StyleSheet.create({
     ...fonts.mono,
     fontWeight: "600",
     fontSize: 13,
+  },
+
+  // ── Transaction UI ────────────────────────────────────
+  connectWalletBar: {
+    backgroundColor: colors.card,
+    borderRadius: radius.md,
+    padding: spacing.sm,
+    marginBottom: spacing.md,
+    borderWidth: 1,
+    borderColor: colors.cardBorder,
+    alignItems: "center",
+  },
+  connectWalletText: {
+    fontSize: 12,
+    color: colors.mutedForeground,
+    fontWeight: "500",
+  },
+  txResultBar: {
+    borderRadius: radius.md,
+    padding: spacing.sm,
+    marginBottom: spacing.md,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.sm,
+    flexWrap: "wrap",
+  },
+  txResultText: {
+    fontSize: 12,
+    fontWeight: "600",
+  },
+  txSolscanLink: {
+    fontSize: 11,
+    color: colors.info,
+    fontWeight: "500",
+  },
+  actionArea: {
+    marginTop: spacing.sm,
+    gap: spacing.xs,
+  },
+  actionBtn: {
+    backgroundColor: colors.foreground,
+    borderRadius: radius.md,
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    alignItems: "center",
+    justifyContent: "center",
+    minHeight: 38,
+  },
+  actionBtnText: {
+    color: colors.background,
+    fontSize: 13,
+    fontWeight: "600",
+  },
+  actionBtnDanger: {
+    backgroundColor: "transparent",
+    borderWidth: 1,
+    borderColor: colors.danger,
+  },
+  actionBtnDangerText: {
+    color: colors.danger,
+    fontSize: 13,
+    fontWeight: "600",
+  },
+  actionBtnSuccess: {
+    backgroundColor: colors.success,
+  },
+  actionForm: {
+    gap: spacing.xs,
+  },
+  actionInput: {
+    backgroundColor: colors.background,
+    borderRadius: radius.sm,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    fontSize: 13,
+    color: colors.foreground,
+    borderWidth: 1,
+    borderColor: colors.cardBorder,
+  },
+  actionFormRow: {
+    flexDirection: "row",
+    gap: spacing.xs,
+  },
+  actionBtnSmall: {
+    flex: 1,
+    backgroundColor: colors.foreground,
+    borderRadius: radius.sm,
+    paddingVertical: 8,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  actionBtnSmallText: {
+    color: colors.background,
+    fontSize: 12,
+    fontWeight: "600",
+  },
+  cancelBtn: {
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    justifyContent: "center",
+    borderRadius: radius.sm,
+    borderWidth: 1,
+    borderColor: colors.cardBorder,
+  },
+  cancelBtnText: {
+    color: colors.mutedForeground,
+    fontSize: 12,
+    fontWeight: "500",
   },
 });

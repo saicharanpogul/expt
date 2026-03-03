@@ -16,6 +16,7 @@ import { Alert, Platform } from "react-native";
 
 const RPC_URL =
   process.env.EXPO_PUBLIC_SOLANA_RPC_URL || clusterApiUrl("devnet");
+const CLUSTER = process.env.EXPO_PUBLIC_SOLANA_NETWORK || "devnet";
 const APP_IDENTITY = {
   name: "Expt",
   uri: "https://expt.fun",
@@ -65,7 +66,7 @@ export async function connectWallet(): Promise<PublicKey | null> {
 
     const result = await transact(async (wallet: any) => {
       const { accounts } = await wallet.authorize({
-        cluster: "devnet",
+        cluster: CLUSTER,
         identity: APP_IDENTITY,
       });
       return accounts[0]?.address;
@@ -100,7 +101,7 @@ export async function signAndSendTransaction(
 
     const signature = await transact(async (wallet: any) => {
       await wallet.authorize({
-        cluster: "devnet",
+        cluster: CLUSTER,
         identity: APP_IDENTITY,
       });
 

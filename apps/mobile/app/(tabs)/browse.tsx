@@ -5,9 +5,10 @@ import {
   FlatList,
   TouchableOpacity,
   StyleSheet,
-  ActivityIndicator,
   RefreshControl,
   Image,
+  TextInput,
+  Animated,
 } from "react-native";
 import { useRouter } from "expo-router";
 import {
@@ -40,6 +41,99 @@ const STATUS_COLORS: Record<number, string> = {
 // Track metadata per experiment address
 type MetadataMap = Record<string, ExptMetadata | null>;
 
+// ── Skeleton Card ──────────────────────────────────────────────
+
+function SkeletonCard({ delay = 0 }: { delay?: number }) {
+  const opacity = useState(new Animated.Value(0.3))[0];
+
+  useEffect(() => {
+    const animation = Animated.loop(
+      Animated.sequence([
+        Animated.timing(opacity, {
+          toValue: 1,
+          duration: 800,
+          delay,
+          useNativeDriver: true,
+        }),
+        Animated.timing(opacity, {
+          toValue: 0.3,
+          duration: 800,
+          useNativeDriver: true,
+        }),
+      ])
+    );
+    animation.start();
+    return () => animation.stop();
+  }, [opacity, delay]);
+
+  return (
+    <Animated.View style={[styles.card, { opacity }]}>
+      <View style={styles.cardHeader}>
+        <View style={styles.cardHeaderLeft}>
+          <View
+            style={[
+              styles.tokenImageFallback,
+              { backgroundColor: colors.secondary },
+            ]}
+          />
+          <View style={styles.cardTitleWrap}>
+            <View
+              style={{
+                height: 14,
+                width: 120,
+                backgroundColor: colors.secondary,
+                borderRadius: 4,
+              }}
+            />
+            <View
+              style={{
+                height: 10,
+                width: 80,
+                backgroundColor: colors.secondary,
+                borderRadius: 4,
+                marginTop: 6,
+              }}
+            />
+          </View>
+        </View>
+        <View
+          style={{
+            height: 18,
+            width: 50,
+            backgroundColor: colors.secondary,
+            borderRadius: radius.full,
+          }}
+        />
+      </View>
+      <View style={styles.cardStats}>
+        {[1, 2, 3].map((i) => (
+          <View key={i} style={styles.stat}>
+            <View
+              style={{
+                height: 8,
+                width: 40,
+                backgroundColor: colors.secondary,
+                borderRadius: 3,
+              }}
+            />
+            <View
+              style={{
+                height: 12,
+                width: 50,
+                backgroundColor: colors.secondary,
+                borderRadius: 3,
+                marginTop: 4,
+              }}
+            />
+          </View>
+        ))}
+      </View>
+    </Animated.View>
+  );
+}
+
+// ── Main Component ────────────────────────────────────────────
+
 export default function BrowseScreen() {
   const router = useRouter();
   const [experiments, setExperiments] = useState<ParsedExptConfig[]>([]);
@@ -49,6 +143,7 @@ export default function BrowseScreen() {
   const [activeFilter, setActiveFilter] = useState<ExptStatus | undefined>(
     undefined
   );
+  const [searchQuery, setSearchQuery] = useState("");
 
   const load = useCallback(async () => {
     try {
@@ -80,11 +175,22 @@ export default function BrowseScreen() {
     setRefreshing(false);
   }, [load]);
 
-  // Client-side filter
-  const filtered =
-    activeFilter !== undefined
-      ? experiments.filter((e) => e.status === activeFilter)
-      : experiments;
+  // Client-side filter + search
+  const filtered = experiments.filter((e) => {
+    // Status filter
+    if (activeFilter !== undefined && e.status !== activeFilter) return false;
+    // Search filter
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase();
+      const key = e.address.toBase58();
+      const meta = metadataMap[key];
+      const nameMatch = e.name.toLowerCase().includes(q);
+      const symbolMatch = meta?.symbol?.toLowerCase().includes(q) ?? false;
+      const addrMatch = key.toLowerCase().includes(q);
+      return nameMatch || symbolMatch || addrMatch;
+    }
+    return true;
+  });
 
   const renderExperiment = ({ item }: { item: ParsedExptConfig }) => {
     const key = item.address.toBase58();
@@ -135,6 +241,24 @@ export default function BrowseScreen() {
           </View>
         </View>
 
+        {/* Milestone progress bar */}
+        <View style={styles.milestoneProgress}>
+          <View style={styles.milestoneBarBg}>
+            <View
+              style={[
+                styles.milestoneBarFill,
+                {
+                  width: `${
+                    item.milestoneCount > 0
+                      ? (passedCount / item.milestoneCount) * 100
+                      : 0
+                  }%`,
+                },
+              ]}
+            />
+          </View>
+        </View>
+
         {/* Stats row */}
         <View style={styles.cardStats}>
           <View style={styles.stat}>
@@ -162,6 +286,27 @@ export default function BrowseScreen() {
 
   return (
     <View style={styles.container}>
+      {/* Search bar */}
+      <View style={styles.searchContainer}>
+        <View style={styles.searchBar}>
+          <Text style={styles.searchIcon}>🔍</Text>
+          <TextInput
+            style={styles.searchInput}
+            placeholder="Search experiments..."
+            placeholderTextColor={colors.mutedForeground}
+            value={searchQuery}
+            onChangeText={setSearchQuery}
+            autoCapitalize="none"
+            autoCorrect={false}
+          />
+          {searchQuery.length > 0 && (
+            <TouchableOpacity onPress={() => setSearchQuery("")}>
+              <Text style={styles.clearBtn}>✕</Text>
+            </TouchableOpacity>
+          )}
+        </View>
+      </View>
+
       {/* Filter chips */}
       <View style={styles.filters}>
         {STATUS_FILTERS.map((f) => (
@@ -187,11 +332,11 @@ export default function BrowseScreen() {
 
       {/* List */}
       {loading ? (
-        <ActivityIndicator
-          size="large"
-          color={colors.primary}
-          style={styles.loader}
-        />
+        <View style={styles.skeletonList}>
+          {[0, 1, 2].map((i) => (
+            <SkeletonCard key={i} delay={i * 150} />
+          ))}
+        </View>
       ) : (
         <FlatList
           data={filtered}
@@ -203,7 +348,12 @@ export default function BrowseScreen() {
           }
           ListEmptyComponent={
             <View style={styles.empty}>
-              <Text style={styles.emptyText}>No experiments found</Text>
+              <Text style={styles.emptyEmoji}>🔬</Text>
+              <Text style={styles.emptyText}>
+                {searchQuery
+                  ? "No experiments match your search"
+                  : "No experiments found"}
+              </Text>
             </View>
           }
         />
@@ -216,6 +366,36 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: colors.background,
+  },
+  searchContainer: {
+    paddingHorizontal: spacing.md,
+    paddingTop: spacing.sm,
+    paddingBottom: 4,
+  },
+  searchBar: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: colors.card,
+    borderRadius: radius.md,
+    paddingHorizontal: 12,
+    height: 40,
+    borderWidth: 1,
+    borderColor: colors.cardBorder,
+    gap: 8,
+  },
+  searchIcon: {
+    fontSize: 14,
+  },
+  searchInput: {
+    flex: 1,
+    fontSize: 14,
+    color: colors.foreground,
+    paddingVertical: 0,
+  },
+  clearBtn: {
+    fontSize: 14,
+    color: colors.mutedForeground,
+    paddingHorizontal: 4,
   },
   filters: {
     flexDirection: "row",
@@ -242,6 +422,10 @@ const styles = StyleSheet.create({
   },
   chipTextActive: {
     color: colors.background,
+  },
+  skeletonList: {
+    padding: spacing.md,
+    gap: spacing.sm,
   },
   list: {
     padding: spacing.md,
@@ -325,6 +509,20 @@ const styles = StyleSheet.create({
     fontSize: 10,
     fontWeight: "500",
   },
+  milestoneProgress: {
+    marginBottom: spacing.sm,
+  },
+  milestoneBarBg: {
+    height: 3,
+    backgroundColor: colors.secondary,
+    borderRadius: 2,
+    overflow: "hidden",
+  },
+  milestoneBarFill: {
+    height: "100%",
+    backgroundColor: colors.foreground,
+    borderRadius: 2,
+  },
   cardStats: {
     flexDirection: "row",
     justifyContent: "space-between",
@@ -343,15 +541,15 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     marginTop: 2,
   },
-  loader: {
-    flex: 1,
-    justifyContent: "center",
-  },
   empty: {
     flex: 1,
     justifyContent: "center",
     alignItems: "center",
     paddingTop: 80,
+  },
+  emptyEmoji: {
+    fontSize: 36,
+    marginBottom: spacing.sm,
   },
   emptyText: {
     ...fonts.small,

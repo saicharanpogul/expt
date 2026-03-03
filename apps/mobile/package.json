@@ -11,7 +11,9 @@
   "dependencies": {
     "@solana/web3.js": "1",
     "expo": "~54.0.33",
+    "expo-clipboard": "~7.0.1",
     "expo-constants": "~17.1.6",
+    "expo-haptics": "~14.0.1",
     "expo-router": "~5.0.7",
     "expo-status-bar": "~3.0.9",
     "react": "19.1.0",
